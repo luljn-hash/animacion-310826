@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Filmstrip Stop Motion Studio Pro</title>
+  <title>Filmstrip Stop Motion Studio - Clean</title>
   <!-- jsPDF para generar el PDF descargable -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <!-- gifshot para crear GIFs -->
@@ -231,25 +231,63 @@
       box-shadow: 0 4px 10px rgba(0,0,0,0.5);
     }
 
-    /* --- ESTILO DE IMPRESIÓN DIRECTA --- */
+    /* --- ESTILO DE IMPRESIÓN LIMPIO (SIN TEXTO NI ADORNOS) --- */
     @media print {
-      @page { size: portrait; margin: 8mm; }
-      html, body { width: 100% !important; margin: 0 !important; padding: 0 !important; background: #ffffff !important; }
-      body > *:not(#printableFilmSheet) { display: none !important; }
-      #printableFilmSheet { display: block !important; width: 100% !important; margin: 0 auto !important; padding-top: 2mm !important; }
+      @page {
+        size: portrait;
+        margin: 10mm;
+      }
+      html, body {
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+      }
+      body > *:not(#printableFilmSheet) {
+        display: none !important;
+      }
+      #printableFilmSheet {
+        display: block !important;
+        width: 100% !important;
+        margin: 0 auto !important;
+        padding-top: 5mm !important;
+        box-sizing: border-box !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
     }
     #printableFilmSheet { display: none; }
-    .film-print-title { font-size: 10pt; font-family: sans-serif; text-align: left; margin-bottom: 2mm; color: #000; padding-left: 2mm; }
-    .film-columns-container { display: flex; justify-content: space-between; width: 100%; max-width: 195mm; margin: 0 auto; gap: 6mm; }
-    .film-column-block { flex: 1; display: flex; flex-direction: column; align-items: center; }
-    .film-col-header { font-size: 13pt; font-weight: bold; margin-bottom: 2mm; color: #000; }
-    .film-strip-svg { width: 100%; height: auto; }
+
+    .film-columns-container {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 185mm;
+      margin: 0 auto;
+      gap: 8mm;
+    }
+    .film-column-block {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .film-col-header {
+      font-size: 13pt;
+      font-weight: bold;
+      margin-bottom: 3mm;
+      color: #000;
+    }
+    .clean-strip-svg {
+      width: 100%;
+      height: auto;
+    }
   </style>
 </head>
 <body>
 
-  <h1>🎬 Filmstrip Stop Motion Studio</h1>
-  <p>Crea animaciones en 3D y reprodúcelas en pantalla completa.</p>
+  <h1>🎬 Stop Motion Studio</h1>
+  <p>Animación continua de 3 columnas de cuadros limpios.</p>
 
   <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
   <input type="file" id="galleryInput" accept="image/*" style="display:none;">
@@ -272,7 +310,7 @@
 
     <!-- Botones de PDF e Impresión -->
     <div style="display:flex; justify-content:center; gap:6px; margin-top:8px;">
-      <button class="btn btn-purple" onclick="generateAndDownloadPDF()">📄 Descargar PDF</button>
+      <button class="btn btn-purple" onclick="generateAndDownloadPDF()">📄 Descargar PDF Limpio</button>
       <button class="btn btn-outline" onclick="window.print()">🖨️ Imprimir</button>
     </div>
     
@@ -302,13 +340,13 @@
       <button class="btn btn-purple btn-sm" onclick="runIndividualBoxDetect()">⚡ Re-Detectar</button>
       <button class="btn btn-outline btn-sm" onclick="addNewBox()">➕ Añadir Cuadro</button>
       <button class="btn btn-outline btn-sm" onclick="removeLastBox()">➖ Quitar</button>
-      <button class="btn btn-dark btn-sm" onclick="saveRawPhotoToGallery()">💾 Guardar Foto en Fototeca</button>
+      <button class="btn btn-dark btn-sm" onclick="saveRawPhotoToGallery()">💾 Guardar en Fototeca</button>
     </div>
 
     <canvas id="cropCanvas"></canvas>
 
     <div style="font-size: 0.8rem; color: #666; margin-top: 6px;">
-      💡 <em>Cada cuadro tiene 4 puntos rojos. Arrástralos para ajustar esquinas, o el centro para mover el cuadro.</em>
+      💡 <em>Cada cuadro tiene sus 4 puntos rojos. Arrástralos para ajustar esquinas, o toca el centro para mover el cuadro.</em>
     </div>
 
     <div style="margin-top: 10px;">
@@ -364,9 +402,8 @@
     <canvas id="fullscreenCanvas"></canvas>
   </div>
 
-  <!-- Plantilla SVG para Impresión Directa -->
+  <!-- Plantilla SVG Limpia para Impresión Web -->
   <div id="printableFilmSheet">
-    <div class="film-print-title">Utiliza las 2 primeras columnas para compartir un sueño o emoción:</div>
     <div class="film-columns-container">
       <div class="film-column-block">
         <div class="film-col-header">1</div>
@@ -390,7 +427,7 @@
     let outHeight = 360;
 
     let loadedImage = null;
-    let rawUploadedFile = null; // Guarda el archivo original en máxima calidad
+    let rawUploadedFile = null;
     let isAppending = false;
     
     let detectedBoxes = [];
@@ -424,7 +461,7 @@
       if (loadedImage) drawAdjuster();
     }
 
-    // --- GENERAR Y DESCARGAR PDF VECTORIAL EXACTO ---
+    // --- GENERAR Y DESCARGAR PDF VECTORIAL LIMPIO (SIN FRASE NI PERFORACIONES) ---
     function generateAndDownloadPDF() {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({
@@ -433,60 +470,32 @@
         format: 'letter' // 215.9 mm x 279.4 mm
       });
 
-      // Texto superior
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(0, 0, 0);
-      doc.text("Utiliza las 2 primeras columnas para compartir un sueño o emoción:", 14, 15);
-
       // Encabezados de Columna
-      doc.setFontSize(13);
+      doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
-      doc.text("1", 42, 23);
-      doc.text("2", 108, 23);
-      doc.text("?", 174, 23);
+      doc.setTextColor(0, 0, 0);
+      doc.text("1", 42, 18);
+      doc.text("2", 108, 18);
+      doc.text("?", 174, 18);
 
-      const stripW = 54;
-      const stripH = 245;
-      const startY = 26;
-      const stripXs = [15, 81, 147];
+      const frameW = 54;
+      const frameH = 21.5;
+      const frameGap = 3.0;
+      const startY = 22;
+      const colXs = [15, 81, 147];
 
-      stripXs.forEach(x => {
-        // Fondo negro de la tira de película
-        doc.setFillColor(0, 0, 0);
-        doc.rect(x, startY, stripW, stripH, 'F');
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(1.2); // Borde negro grueso bien definido
 
-        // Perforaciones blancas cuadradas a los lados
-        doc.setFillColor(255, 255, 255);
-        const numSprockets = 42;
-        const sprocSize = 2.4;
-        const step = stripH / numSprockets;
-        for (let i = 0; i < numSprockets; i++) {
-          const sy = startY + 2 + (i * step);
-          // Izquierda
-          doc.rect(x + 2, sy, sprocSize, sprocSize, 'F');
-          // Derecha
-          doc.rect(x + stripW - 4.4, sy, sprocSize, sprocSize, 'F');
-        }
-
-        // 10 Cuadros de dibujo interiores
-        const frameW = 38;
-        const frameH = 21.5;
-        const frameGap = 2.4;
-        const fx = x + 8;
-        const fStartY = startY + 3.5;
-
-        doc.setFillColor(255, 255, 255);
-        doc.setDrawColor(0, 0, 0);
-        doc.setLineWidth(1.2);
-
+      colXs.forEach(x => {
         for (let r = 0; r < 10; r++) {
-          const fy = fStartY + r * (frameH + frameGap);
-          doc.rect(fx, fy, frameW, frameH, 'FD');
+          const fy = startY + r * (frameH + frameGap);
+          doc.rect(x, fy, frameW, frameH, 'FD');
         }
       });
 
-      doc.save("plantilla_tiras_pelicula.pdf");
+      doc.save("plantilla_cuadros_limpia.pdf");
     }
 
     // --- GUARDAR FOTO ORIGINAL EN LA FOTOTECA ---
@@ -496,7 +505,6 @@
         return;
       }
 
-      // En iOS Safari, navigator.share permite guardar directamente en la Fototeca
       if (navigator.canShare && navigator.canShare({ files: [rawUploadedFile] })) {
         try {
           await navigator.share({
@@ -505,12 +513,9 @@
             text: 'Guarda esta imagen en tu Fototeca'
           });
           return;
-        } catch(err) {
-          console.log('Share cancelado', err);
-        }
+        } catch(err) {}
       }
 
-      // Fallback de descarga directa
       const url = URL.createObjectURL(rawUploadedFile);
       const a = document.createElement('a');
       a.href = url;
@@ -558,36 +563,24 @@
       }, 1000 / fps);
     }
 
-    // --- GENERADOR VECTORIAL SVG PARA IMPRESIÓN WEB ---
+    // --- GENERADOR VECTORIAL SVG LIMPIO PARA IMPRESIÓN WEB ---
     function renderPrintableSVGs() {
       const stripWidth = 180;
-      const stripHeight = 860;
-      const frameW = 126;
-      const frameH = 74;
-      const frameX = 27;
-      const frameGap = 10;
-      const startY = 12;
+      const stripHeight = 840;
+      const frameW = 172;
+      const frameH = 72;
+      const frameX = 4;
+      const frameGap = 11;
+      const startY = 6;
 
       let framesSVG = '';
       for (let i = 0; i < 10; i++) {
         const y = startY + i * (frameH + frameGap);
-        framesSVG += `<rect x="${frameX}" y="${y}" width="${frameW}" height="${frameH}" fill="#ffffff" stroke="#000000" stroke-width="7" />`;
-      }
-
-      let sprocketsSVG = '';
-      const numSprockets = 44;
-      const sprocSize = 10;
-      const sprocStep = stripHeight / numSprockets;
-      for (let i = 0; i < numSprockets; i++) {
-        const y = 8 + i * sprocStep;
-        sprocketsSVG += `<rect x="7" y="${y}" width="${sprocSize}" height="${sprocSize}" fill="#ffffff" rx="1" />`;
-        sprocketsSVG += `<rect x="${stripWidth - 17}" y="${y}" width="${sprocSize}" height="${sprocSize}" fill="#ffffff" rx="1" />`;
+        framesSVG += `<rect x="${frameX}" y="${y}" width="${frameW}" height="${frameH}" fill="#ffffff" stroke="#000000" stroke-width="7" rx="3" />`;
       }
 
       const fullSVG = `
-        <svg viewBox="0 0 ${stripWidth} ${stripHeight}" class="film-strip-svg" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0" y="0" width="${stripWidth}" height="${stripHeight}" fill="#000000" />
-          ${sprocketsSVG}
+        <svg viewBox="0 0 ${stripWidth} ${stripHeight}" class="clean-strip-svg" xmlns="http://www.w3.org/2000/svg">
           ${framesSVG}
         </svg>
       `;
@@ -606,7 +599,7 @@
 
     function loadImageFile(file) {
       if (!file) return;
-      rawUploadedFile = file; // Guarda el archivo original en máxima calidad
+      rawUploadedFile = file;
       const reader = new FileReader();
       reader.onload = function(event) {
         loadedImage = new Image();
@@ -661,12 +654,12 @@
 
         let rawFound = [];
         const totalArea = detW * detH;
-        const minArea = totalArea * 0.004;
-        const maxArea = totalArea * 0.07;
-        const minW = detW * 0.10;
-        const maxW = detW * 0.35;
-        const minH = detH * 0.03;
-        const maxH = detH * 0.12;
+        const minArea = totalArea * 0.005;
+        const maxArea = totalArea * 0.08;
+        const minW = detW * 0.12;
+        const maxW = detW * 0.38;
+        const minH = detH * 0.035;
+        const maxH = detH * 0.14;
 
         for (let i = 0; i < contours.size(); ++i) {
           let cnt = contours.get(i);
@@ -680,7 +673,7 @@
           if (approx.rows === 4 && cv.isContourConvex(approx)) {
             let rect = cv.boundingRect(approx);
             let asp = rect.width / rect.height;
-            if (rect.width >= minW && rect.width <= maxW && rect.height >= minH && rect.height <= maxH && asp >= 1.2 && asp <= 2.2) {
+            if (rect.width >= minW && rect.width <= maxW && rect.height >= minH && rect.height <= maxH && asp >= 1.2 && asp <= 2.4) {
               let pts = [];
               for (let j = 0; j < 4; j++) {
                 pts.push({
@@ -741,7 +734,7 @@
             });
           });
 
-          banner.innerText = `✅ ¡Detectados ${detectedBoxes.length} cuadros individuales con 4 esquinas!`;
+          banner.innerText = `✅ ¡Detectados ${detectedBoxes.length} cuadros limpios con 4 esquinas!`;
           banner.style.background = '#e8f5e9';
           banner.style.color = '#2e7d32';
           return;
@@ -753,7 +746,7 @@
       }
 
       generateDefaultFilmBoxes();
-      banner.innerText = '🎯 Ajusta los puntos rojos sobre cada cuadro de la tira.';
+      banner.innerText = '🎯 Ajusta los puntos rojos sobre cada cuadro.';
       banner.style.background = '#fff3e0';
       banner.style.color = '#e65100';
     }
@@ -775,8 +768,8 @@
       const gapY = (totalH * 0.10) / 9;
 
       for (let c = 0; c < 3; c++) {
-        const x0 = marginX + c * (stripW + gapX) + (stripW * 0.12);
-        const boxW = stripW * 0.76;
+        const x0 = marginX + c * (stripW + gapX);
+        const boxW = stripW;
 
         for (let r = 0; r < 10; r++) {
           const y0 = marginY + r * (cellH + gapY);
@@ -798,8 +791,8 @@
       if (!loadedImage) return;
       const w = loadedImage.width;
       const h = loadedImage.height;
-      const boxW = w * 0.20;
-      const boxH = h * 0.07;
+      const boxW = w * 0.22;
+      const boxH = h * 0.08;
       const cx = w / 2;
       const cy = h / 2;
       detectedBoxes.push({
@@ -859,7 +852,7 @@
         const [p0, p1, p2, p3] = box.corners;
         const active = isBoxActive(box);
 
-        // 1. Contorno amarillo
+        // 1. Contorno del cuadro
         cropCtx.strokeStyle = active ? '#ffeb3b' : 'rgba(255, 235, 59, 0.25)';
         cropCtx.lineWidth = Math.max(2.5, cropCanvas.width * 0.0035);
         cropCtx.beginPath();
