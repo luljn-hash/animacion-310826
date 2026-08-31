@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Filmstrip Stop Motion Studio - Clean</title>
+  <title>Filmstrip Stop Motion Studio Pro</title>
   <!-- jsPDF para generar el PDF descargable -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <!-- gifshot para crear GIFs -->
@@ -57,7 +57,7 @@
     .btn-wa { background: var(--whatsapp); color: white; }
     .btn-dark { background: #212121; color: #fff; }
     .btn-outline { background: transparent; color: #444; border: 2px solid #bbb; box-shadow: none; }
-    .btn-sm { padding: 6px 12px; font-size: 0.85rem; border-radius: 8px; }
+    .btn-sm { padding: 6px 12px; font-size: 0.82rem; border-radius: 8px; }
     
     .card {
       background: var(--card);
@@ -231,7 +231,7 @@
       box-shadow: 0 4px 10px rgba(0,0,0,0.5);
     }
 
-    /* --- ESTILO DE IMPRESIÓN LIMPIO (SIN TEXTO NI ADORNOS) --- */
+    /* --- ESTILO DE IMPRESIÓN LIMPIO (1 PÁGINA) --- */
     @media print {
       @page {
         size: portrait;
@@ -287,7 +287,7 @@
 <body>
 
   <h1>🎬 Stop Motion Studio</h1>
-  <p>Animación continua de 3 columnas de cuadros limpios.</p>
+  <p>Crea animaciones cuadrando tiras y cuadros en perspectiva 3D.</p>
 
   <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
   <input type="file" id="galleryInput" accept="image/*" style="display:none;">
@@ -321,9 +321,9 @@
     </div>
   </div>
 
-  <!-- Paso 2: Editor 3D con 4 Puntos Rojos por Cuadro -->
+  <!-- Paso 2: Editor 3D (Modo Cuadros o Modo Tiras) -->
   <div class="card" id="adjustCard" style="display:none;">
-    <div class="status-banner" id="snapStatusMsg" style="background:#e8f5e9; color:#2e7d32;">✨ Cuadros detectados con 4 esquinas 3D.</div>
+    <div class="status-banner" id="snapStatusMsg" style="background:#e8f5e9; color:#2e7d32;">✨ Modo de encuadre activo.</div>
     
     <div style="margin-bottom: 8px;">
       <label style="font-size:0.85rem; font-weight:bold;">Columnas activas: </label>
@@ -336,21 +336,22 @@
       </select>
     </div>
 
+    <!-- BARRA DE HERRAMIENTAS: SALIDA DE EMERGENCIA Y RE-DETECCIÓN -->
     <div class="adjust-toolbar">
-      <button class="btn btn-purple btn-sm" onclick="runIndividualBoxDetect()">⚡ Re-Detectar</button>
-      <button class="btn btn-outline btn-sm" onclick="addNewBox()">➕ Añadir Cuadro</button>
-      <button class="btn btn-outline btn-sm" onclick="removeLastBox()">➖ Quitar</button>
+      <!-- BOTÓN DE SALIDA SOLICITADO: Ajustar por Tiras (4 Esquinas por Columna) -->
+      <button class="btn btn-blue btn-sm" id="toggleModeBtn" onclick="switchToStripMode()">📐 Ajuste por Tiras (4 Esquinas ÷ 10)</button>
+      <button class="btn btn-purple btn-sm" onclick="runIndividualBoxDetect()">⚡ Auto-Detectar Cuadros</button>
       <button class="btn btn-dark btn-sm" onclick="saveRawPhotoToGallery()">💾 Guardar en Fototeca</button>
     </div>
 
     <canvas id="cropCanvas"></canvas>
 
-    <div style="font-size: 0.8rem; color: #666; margin-top: 6px;">
-      💡 <em>Cada cuadro tiene sus 4 puntos rojos. Arrástralos para ajustar esquinas, o toca el centro para mover el cuadro.</em>
+    <div id="modeHintText" style="font-size: 0.8rem; color: #555; margin-top: 6px;">
+      💡 <em>Arrastra los puntos rojos para ajustar esquinas.</em>
     </div>
 
     <div style="margin-top: 10px;">
-      <button class="btn btn-blue" id="confirmCropBtn" onclick="cropAndAnimateBoxes()">✨ Generar Stop Motion</button>
+      <button class="btn btn-blue" id="confirmCropBtn" onclick="cropAndAnimate()">✨ Generar Stop Motion</button>
       <button class="btn btn-outline" onclick="cancelAdjust()">🔄 Elegir Otra Foto</button>
     </div>
   </div>
@@ -365,7 +366,6 @@
       <input type="range" id="fpsSlider" min="2" max="24" value="8" oninput="updateFps(this.value)">
     </div>
 
-    <!-- BOTÓN PANTALLA COMPLETA ROTADA -->
     <div style="margin-top: 8px;">
       <button class="btn btn-dark" style="width:100%; font-size:1rem; padding:12px;" onclick="openFullscreenRotated()">
         ⛶ Pantalla Completa (Girar Horizontal)
@@ -423,6 +423,8 @@
   <script>
     let openCvLoaded = false;
     let selectedColMode = '1-2';
+    let adjustMode = 'boxes'; // 'boxes' (4 pts por cuadro) o 'strips' (4 esquinas por columna dividida en 10)
+    
     let outWidth = 540;
     let outHeight = 360;
 
@@ -430,7 +432,11 @@
     let rawUploadedFile = null;
     let isAppending = false;
     
+    // Modo 1: Cuadros individuales
     let detectedBoxes = [];
+    // Modo 2: Tiras de 4 esquinas (1 tira por columna activa)
+    let columnStrips = [];
+
     let activeInteraction = null;
 
     let allFrames = [];
@@ -452,25 +458,30 @@
     function onColSelectionChange() {
       selectedColMode = document.getElementById('colSelect').value;
       document.getElementById('colSelectInAdjust').value = selectedColMode;
-      if (loadedImage) drawAdjuster();
+      if (loadedImage) {
+        if (adjustMode === 'strips') initColumnStrips();
+        drawAdjuster();
+      }
     }
 
     function syncColSelection(val) {
       selectedColMode = val;
       document.getElementById('colSelect').value = val;
-      if (loadedImage) drawAdjuster();
+      if (loadedImage) {
+        if (adjustMode === 'strips') initColumnStrips();
+        drawAdjuster();
+      }
     }
 
-    // --- GENERAR Y DESCARGAR PDF VECTORIAL LIMPIO (SIN FRASE NI PERFORACIONES) ---
+    // --- GENERAR Y DESCARGAR PDF VECTORIAL LIMPIO ---
     function generateAndDownloadPDF() {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
-        format: 'letter' // 215.9 mm x 279.4 mm
+        format: 'letter'
       });
 
-      // Encabezados de Columna
       doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(0, 0, 0);
@@ -486,7 +497,7 @@
 
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(1.2); // Borde negro grueso bien definido
+      doc.setLineWidth(1.2);
 
       colXs.forEach(x => {
         for (let r = 0; r < 10; r++) {
@@ -563,7 +574,7 @@
       }, 1000 / fps);
     }
 
-    // --- GENERADOR VECTORIAL SVG LIMPIO PARA IMPRESIÓN WEB ---
+    // --- SVG PARA IMPRESIÓN WEB ---
     function renderPrintableSVGs() {
       const stripWidth = 180;
       const stripHeight = 840;
@@ -609,10 +620,73 @@
       reader.readAsDataURL(file);
     }
 
+    // --- SALIDA DE EMERGENCIA / MODO TIRAS (4 ESQUINAS POR COLUMNA) ---
+    function switchToStripMode() {
+      adjustMode = 'strips';
+      initColumnStrips();
+      document.getElementById('snapStatusMsg').innerText = '📐 Modo Tiras Activo: 4 puntos rojos por columna ÷ 10 cuadros.';
+      document.getElementById('snapStatusMsg').style.background = '#e3f2fd';
+      document.getElementById('snapStatusMsg').style.color = '#0d47a1';
+      document.getElementById('modeHintText').innerHTML = '💡 <em>Ajusta las 4 esquinas de cada columna. Se divide automáticamente en 10 cuadros en 3D.</em>';
+      drawAdjuster();
+    }
+
+    function getActiveColIndices() {
+      if (selectedColMode === 'all') return [0, 1, 2];
+      if (selectedColMode === '1-2') return [0, 1];
+      if (selectedColMode === '1') return [0];
+      if (selectedColMode === '2') return [1];
+      if (selectedColMode === '3') return [2];
+      return [0, 1];
+    }
+
+    function initColumnStrips() {
+      columnStrips = [];
+      if (!loadedImage) return;
+      const w = loadedImage.width;
+      const h = loadedImage.height;
+
+      const marginX = w * 0.08;
+      const marginY = h * 0.07;
+      const totalW = w - 2 * marginX;
+      const totalH = h - 2 * marginY;
+
+      const colW = totalW * 0.28;
+      const gapX = (totalW - 3 * colW) / 2;
+
+      const activeCols = getActiveColIndices();
+
+      activeCols.forEach(colIdx => {
+        const x0 = marginX + colIdx * (colW + gapX);
+        const y0 = marginY;
+        columnStrips.push({
+          colIdx: colIdx,
+          corners: [
+            { x: x0, y: y0 },
+            { x: x0 + colW, y: y0 },
+            { x: x0 + colW, y: y0 + totalH },
+            { x: x0, y: y0 + totalH }
+          ]
+        });
+      });
+    }
+
+    // Interpolación en perspectiva para 1 columna dividida en 10 cuadros
+    function interpColStrip(strip, u, v) {
+      const [tl, tr, br, bl] = strip.corners;
+      return {
+        x: (1 - u) * (1 - v) * tl.x + u * (1 - v) * tr.x + u * v * br.x + (1 - u) * v * bl.x,
+        y: (1 - u) * (1 - v) * tl.y + u * (1 - v) * tr.y + u * v * br.y + (1 - u) * v * bl.y
+      };
+    }
+
     // --- DETECCIÓN INDIVIDUAL 3D CON 4 PUNTOS ROJOS ---
     function runIndividualBoxDetect() {
+      adjustMode = 'boxes';
       const banner = document.getElementById('snapStatusMsg');
       detectedBoxes = [];
+
+      document.getElementById('modeHintText').innerHTML = '💡 <em>Cada cuadro tiene 4 puntos rojos. Arrástralos para ajustar esquinas.</em>';
 
       if (!openCvLoaded || !loadedImage) {
         generateDefaultFilmBoxes();
@@ -737,6 +811,7 @@
           banner.innerText = `✅ ¡Detectados ${detectedBoxes.length} cuadros limpios con 4 esquinas!`;
           banner.style.background = '#e8f5e9';
           banner.style.color = '#2e7d32';
+          drawAdjuster();
           return;
         }
       } catch (err) {
@@ -749,6 +824,7 @@
       banner.innerText = '🎯 Ajusta los puntos rojos sobre cada cuadro.';
       banner.style.background = '#fff3e0';
       banner.style.color = '#e65100';
+      drawAdjuster();
     }
 
     function generateDefaultFilmBoxes() {
@@ -787,33 +863,6 @@
       }
     }
 
-    function addNewBox() {
-      if (!loadedImage) return;
-      const w = loadedImage.width;
-      const h = loadedImage.height;
-      const boxW = w * 0.22;
-      const boxH = h * 0.08;
-      const cx = w / 2;
-      const cy = h / 2;
-      detectedBoxes.push({
-        colIdx: 0,
-        rowIdx: 0,
-        corners: [
-          { x: cx - boxW/2, y: cy - boxH/2 },
-          { x: cx + boxW/2, y: cy - boxH/2 },
-          { x: cx + boxW/2, y: cy + boxH/2 },
-          { x: cx - boxW/2, y: cy + boxH/2 }
-        ]
-      });
-      drawAdjuster();
-    }
-
-    function removeLastBox() {
-      if (detectedBoxes.length <= 1) return;
-      detectedBoxes.pop();
-      drawAdjuster();
-    }
-
     function setupAdjuster() {
       clearInterval(playInterval);
       document.getElementById('uploadCard').style.display = 'none';
@@ -838,59 +887,125 @@
       return true;
     }
 
-    // --- DIBUJAR CUADROS Y PUNTOS ROJOS ---
+    // --- DIBUJADO DE GUÍAS (MODO CUADROS O MODO TIRAS) ---
     function drawAdjuster() {
       cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
       cropCtx.drawImage(loadedImage, 0, 0);
 
-      const redRadius = Math.max(14, cropCanvas.width * 0.020);
-      const fontScale = Math.max(15, cropCanvas.width * 0.022);
+      const redRadius = Math.max(15, cropCanvas.width * 0.022);
+      const fontScale = Math.max(16, cropCanvas.width * 0.024);
 
-      let activeCounter = 1;
+      if (adjustMode === 'strips') {
+        // --- DIBUJAR MODO TIRAS (4 ESQUINAS POR COLUMNA ÷ 10 CUADROS) ---
+        let activeCounter = 1;
 
-      detectedBoxes.forEach((box) => {
-        const [p0, p1, p2, p3] = box.corners;
-        const active = isBoxActive(box);
+        columnStrips.forEach((strip) => {
+          const [p0, p1, p2, p3] = strip.corners;
 
-        // 1. Contorno del cuadro
-        cropCtx.strokeStyle = active ? '#ffeb3b' : 'rgba(255, 235, 59, 0.25)';
-        cropCtx.lineWidth = Math.max(2.5, cropCanvas.width * 0.0035);
-        cropCtx.beginPath();
-        cropCtx.moveTo(p0.x, p0.y);
-        cropCtx.lineTo(p1.x, p1.y);
-        cropCtx.lineTo(p2.x, p2.y);
-        cropCtx.lineTo(p3.x, p3.y);
-        cropCtx.closePath();
-        cropCtx.stroke();
-
-        // 2. Número de secuencia
-        const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
-        const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
-
-        if (active) {
-          cropCtx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+          // Contorno exterior de la columna
+          cropCtx.strokeStyle = 'rgba(33, 150, 243, 0.85)';
+          cropCtx.lineWidth = Math.max(3.5, cropCanvas.width * 0.0045);
           cropCtx.beginPath();
-          cropCtx.arc(cx, cy, fontScale * 0.85, 0, Math.PI * 2);
-          cropCtx.fill();
-
-          cropCtx.fillStyle = '#ffffff';
-          cropCtx.font = `bold ${fontScale}px sans-serif`;
-          cropCtx.textAlign = 'center';
-          cropCtx.textBaseline = 'middle';
-          cropCtx.fillText(String(activeCounter++), cx, cy);
-        }
-
-        // 3. Puntos rojos
-        box.corners.forEach(pt => {
-          cropCtx.fillStyle = active ? '#ff5722' : '#777777';
-          cropCtx.beginPath();
-          cropCtx.arc(pt.x, pt.y, redRadius, 0, Math.PI * 2);
-          cropCtx.fill();
-          cropCtx.strokeStyle = '#ffffff';
-          cropCtx.lineWidth = 2;
+          cropCtx.moveTo(p0.x, p0.y);
+          cropCtx.lineTo(p1.x, p1.y);
+          cropCtx.lineTo(p2.x, p2.y);
+          cropCtx.lineTo(p3.x, p3.y);
+          cropCtx.closePath();
           cropCtx.stroke();
+
+          // 10 cuadros divididos en perspectiva
+          for (let r = 0; r < 10; r++) {
+            const v0 = (r * 0.10) + 0.008;
+            const v1 = ((r + 1) * 0.10) - 0.008;
+
+            const f0 = interpColStrip(strip, 0.02, v0);
+            const f1 = interpColStrip(strip, 0.98, v0);
+            const f2 = interpColStrip(strip, 0.98, v1);
+            const f3 = interpColStrip(strip, 0.02, v1);
+
+            cropCtx.strokeStyle = '#ffeb3b';
+            cropCtx.lineWidth = Math.max(2.5, cropCanvas.width * 0.0035);
+            cropCtx.beginPath();
+            cropCtx.moveTo(f0.x, f0.y);
+            cropCtx.lineTo(f1.x, f1.y);
+            cropCtx.lineTo(f2.x, f2.y);
+            cropCtx.lineTo(f3.x, f3.y);
+            cropCtx.closePath();
+            cropCtx.stroke();
+
+            // Número en el centro
+            const cx = (f0.x + f1.x + f2.x + f3.x) / 4;
+            const cy = (f0.y + f1.y + f2.y + f3.y) / 4;
+
+            cropCtx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+            cropCtx.beginPath();
+            cropCtx.arc(cx, cy, fontScale * 0.85, 0, Math.PI * 2);
+            cropCtx.fill();
+
+            cropCtx.fillStyle = '#ffffff';
+            cropCtx.font = `bold ${fontScale}px sans-serif`;
+            cropCtx.textAlign = 'center';
+            cropCtx.textBaseline = 'middle';
+            cropCtx.fillText(String(activeCounter++), cx, cy);
+          }
+
+          // 4 Puntos Rojos de Esquina de la Tira
+          strip.corners.forEach(pt => {
+            cropCtx.fillStyle = '#ff5722';
+            cropCtx.beginPath();
+            cropCtx.arc(pt.x, pt.y, redRadius * 1.1, 0, Math.PI * 2);
+            cropCtx.fill();
+            cropCtx.strokeStyle = '#ffffff';
+            cropCtx.lineWidth = 3;
+            cropCtx.stroke();
+          });
         });
-      });
+
+      } else {
+        // --- DIBUJAR MODO CUADROS INDIVIDUALES (4 PUNTOS POR CUADRO) ---
+        let activeCounter = 1;
+
+        detectedBoxes.forEach((box) => {
+          const [p0, p1, p2, p3] = box.corners;
+          const active = isBoxActive(box);
+
+          cropCtx.strokeStyle = active ? '#ffeb3b' : 'rgba(255, 235, 59, 0.25)';
+          cropCtx.lineWidth = Math.max(2.5, cropCanvas.width * 0.0035);
+          cropCtx.beginPath();
+          cropCtx.moveTo(p0.x, p0.y);
+          cropCtx.lineTo(p1.x, p1.y);
+          cropCtx.lineTo(p2.x, p2.y);
+          cropCtx.lineTo(p3.x, p3.y);
+          cropCtx.closePath();
+          cropCtx.stroke();
+
+          const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
+          const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
+
+          if (active) {
+            cropCtx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+            cropCtx.beginPath();
+            cropCtx.arc(cx, cy, fontScale * 0.85, 0, Math.PI * 2);
+            cropCtx.fill();
+
+            cropCtx.fillStyle = '#ffffff';
+            cropCtx.font = `bold ${fontScale}px sans-serif`;
+            cropCtx.textAlign = 'center';
+            cropCtx.textBaseline = 'middle';
+            cropCtx.fillText(String(activeCounter++), cx, cy);
+          }
+
+          box.corners.forEach(pt => {
+            cropCtx.fillStyle = active ? '#ff5722' : '#777777';
+            cropCtx.beginPath();
+            cropCtx.arc(pt.x, pt.y, redRadius, 0, Math.PI * 2);
+            cropCtx.fill();
+            cropCtx.strokeStyle = '#ffffff';
+            cropCtx.lineWidth = 2;
+            cropCtx.stroke();
+          });
+        });
+      }
     }
 
     function isPointInsideQuad(pt, quad) {
@@ -917,29 +1032,44 @@
 
     function onPointerDown(e) {
       const pos = getCanvasCoords(e);
-      const touchDist = Math.max(32, cropCanvas.width * 0.055);
+      const touchDist = Math.max(35, cropCanvas.width * 0.06);
       activeInteraction = null;
 
-      for (let b = 0; b < detectedBoxes.length; b++) {
-        for (let c = 0; c < 4; c++) {
-          if (Math.hypot(detectedBoxes[b].corners[c].x - pos.x, detectedBoxes[b].corners[c].y - pos.y) < touchDist) {
-            activeInteraction = { type: 'corner', boxIdx: b, cornerIdx: c };
+      if (adjustMode === 'strips') {
+        // Toque en 1 de las 4 esquinas de una tira
+        for (let s = 0; s < columnStrips.length; s++) {
+          for (let c = 0; c < 4; c++) {
+            if (Math.hypot(columnStrips[s].corners[c].x - pos.x, columnStrips[s].corners[c].y - pos.y) < touchDist) {
+              activeInteraction = { mode: 'strip_corner', stripIdx: s, cornerIdx: c };
+              e.preventDefault();
+              return;
+            }
+          }
+        }
+      } else {
+        // Toque en 1 de los puntos rojos de cuadros individuales
+        for (let b = 0; b < detectedBoxes.length; b++) {
+          for (let c = 0; c < 4; c++) {
+            if (Math.hypot(detectedBoxes[b].corners[c].x - pos.x, detectedBoxes[b].corners[c].y - pos.y) < touchDist) {
+              activeInteraction = { mode: 'box_corner', boxIdx: b, cornerIdx: c };
+              e.preventDefault();
+              return;
+            }
+          }
+        }
+
+        // Toque en el centro del cuadro para moverlo entero
+        for (let b = 0; b < detectedBoxes.length; b++) {
+          if (isPointInsideQuad(pos, detectedBoxes[b].corners)) {
+            activeInteraction = {
+              mode: 'move_box',
+              boxIdx: b,
+              startPos: pos,
+              origCorners: detectedBoxes[b].corners.map(pt => ({ ...pt }))
+            };
             e.preventDefault();
             return;
           }
-        }
-      }
-
-      for (let b = 0; b < detectedBoxes.length; b++) {
-        if (isPointInsideQuad(pos, detectedBoxes[b].corners)) {
-          activeInteraction = {
-            type: 'move_box',
-            boxIdx: b,
-            startPos: pos,
-            origCorners: detectedBoxes[b].corners.map(pt => ({ ...pt }))
-          };
-          e.preventDefault();
-          return;
         }
       }
     }
@@ -948,19 +1078,23 @@
       if (!activeInteraction) return;
       e.preventDefault();
       const pos = getCanvasCoords(e);
-      const bIdx = activeInteraction.boxIdx;
+      const clampedX = Math.max(0, Math.min(cropCanvas.width, pos.x));
+      const clampedY = Math.max(0, Math.min(cropCanvas.height, pos.y));
 
-      if (activeInteraction.type === 'corner') {
-        const cIdx = activeInteraction.cornerIdx;
-        detectedBoxes[bIdx].corners[cIdx] = {
-          x: Math.max(0, Math.min(cropCanvas.width, pos.x)),
-          y: Math.max(0, Math.min(cropCanvas.height, pos.y))
-        };
-      } else if (activeInteraction.type === 'move_box') {
+      if (activeInteraction.mode === 'strip_corner') {
+        const s = activeInteraction.stripIdx;
+        const c = activeInteraction.cornerIdx;
+        columnStrips[s].corners[c] = { x: clampedX, y: clampedY };
+      } else if (activeInteraction.mode === 'box_corner') {
+        const b = activeInteraction.boxIdx;
+        const c = activeInteraction.cornerIdx;
+        detectedBoxes[b].corners[c] = { x: clampedX, y: clampedY };
+      } else if (activeInteraction.mode === 'move_box') {
+        const b = activeInteraction.boxIdx;
         const dx = pos.x - activeInteraction.startPos.x;
         const dy = pos.y - activeInteraction.startPos.y;
         for (let i = 0; i < 4; i++) {
-          detectedBoxes[bIdx].corners[i] = {
+          detectedBoxes[b].corners[i] = {
             x: Math.max(0, Math.min(cropCanvas.width, activeInteraction.origCorners[i].x + dx)),
             y: Math.max(0, Math.min(cropCanvas.height, activeInteraction.origCorners[i].y + dy))
           };
@@ -979,8 +1113,8 @@
     window.addEventListener('touchmove', onPointerMove, { passive: false });
     window.addEventListener('touchend', onPointerUp);
 
-    // --- EXTRAE LOS CUADROS LIMPIOS ---
-    function cropAndAnimateBoxes() {
+    // --- EXTRAE LOS CUADROS LIMPIOS (COMPATIBLE CON AMBOS MODOS) ---
+    function cropAndAnimate() {
       const newPageFrames = [];
 
       const cleanCanvas = document.createElement('canvas');
@@ -990,26 +1124,58 @@
       cleanCtx.drawImage(loadedImage, 0, 0);
 
       const srcMat = cv.imread(cleanCanvas);
-      const activeBoxes = detectedBoxes.filter(isBoxActive);
 
-      activeBoxes.forEach(box => {
-        const [p0, p1, p2, p3] = box.corners;
+      if (adjustMode === 'strips') {
+        // Extracción en Modo Tiras (4 esquinas divididas en 10 cuadros)
+        columnStrips.forEach(strip => {
+          for (let r = 0; r < 10; r++) {
+            const v0 = (r * 0.10) + 0.008;
+            const v1 = ((r + 1) * 0.10) - 0.008;
 
-        let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y]);
-        let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, outWidth, 0, outWidth, outHeight, 0, outHeight]);
+            const f0 = interpColStrip(strip, 0.02, v0);
+            const f1 = interpColStrip(strip, 0.98, v0);
+            const f2 = interpColStrip(strip, 0.98, v1);
+            const f3 = interpColStrip(strip, 0.02, v1);
 
-        let M = cv.getPerspectiveTransform(srcTri, dstTri);
-        let dst = new cv.Mat();
-        cv.warpPerspective(srcMat, dst, M, new cv.Size(outWidth, outHeight), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+            let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [f0.x, f0.y, f1.x, f1.y, f2.x, f2.y, f3.x, f3.y]);
+            let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, outWidth, 0, outWidth, outHeight, 0, outHeight]);
 
-        let fCanvas = document.createElement('canvas');
-        fCanvas.width = outWidth;
-        fCanvas.height = outHeight;
-        cv.imshow(fCanvas, dst);
-        newPageFrames.push(fCanvas);
+            let M = cv.getPerspectiveTransform(srcTri, dstTri);
+            let dst = new cv.Mat();
+            cv.warpPerspective(srcMat, dst, M, new cv.Size(outWidth, outHeight), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
 
-        srcTri.delete(); dstTri.delete(); M.delete(); dst.delete();
-      });
+            let fCanvas = document.createElement('canvas');
+            fCanvas.width = outWidth;
+            fCanvas.height = outHeight;
+            cv.imshow(fCanvas, dst);
+            newPageFrames.push(fCanvas);
+
+            srcTri.delete(); dstTri.delete(); M.delete(); dst.delete();
+          }
+        });
+      } else {
+        // Extracción en Modo Cuadros Individuales
+        const activeBoxes = detectedBoxes.filter(isBoxActive);
+
+        activeBoxes.forEach(box => {
+          const [p0, p1, p2, p3] = box.corners;
+
+          let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y]);
+          let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, outWidth, 0, outWidth, outHeight, 0, outHeight]);
+
+          let M = cv.getPerspectiveTransform(srcTri, dstTri);
+          let dst = new cv.Mat();
+          cv.warpPerspective(srcMat, dst, M, new cv.Size(outWidth, outHeight), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+
+          let fCanvas = document.createElement('canvas');
+          fCanvas.width = outWidth;
+          fCanvas.height = outHeight;
+          cv.imshow(fCanvas, dst);
+          newPageFrames.push(fCanvas);
+
+          srcTri.delete(); dstTri.delete(); M.delete(); dst.delete();
+        });
+      }
       srcMat.delete();
 
       if (isAppending) {
