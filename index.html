@@ -109,7 +109,7 @@
       margin-bottom: 6px;
     }
 
-    /* CONTENEDOR DE ZOOM Y SCROLL */
+    /* CONTENEDOR DE ZOOM */
     .zoom-toolbar {
       display: flex;
       justify-content: center;
@@ -198,7 +198,7 @@
       margin-top: 12px;
     }
 
-    /* --- OVERLAY DE PANTALLA COMPLETA ROTADA --- */
+    /* --- PANTALLA COMPLETA ROTADA --- */
     #fullscreenOverlay {
       position: fixed;
       top: 0;
@@ -252,7 +252,7 @@
       box-shadow: 0 4px 10px rgba(0,0,0,0.5);
     }
 
-    /* --- ESTILO DE IMPRESIÓN LIMPIO (1 PÁGINA) --- */
+    /* --- IMPRESIÓN LIMPIA (1 PÁGINA) --- */
     @media print {
       @page {
         size: portrait;
@@ -342,9 +342,9 @@
     </div>
   </div>
 
-  <!-- Paso 2: Editor 3D con Zoom y Detección Exacta de 10 Cuadros -->
+  <!-- Paso 2: Editor 3D con Modo Tiras por Defecto y Zoom -->
   <div class="card" id="adjustCard" style="display:none;">
-    <div class="status-banner" id="snapStatusMsg" style="background:#e8f5e9; color:#2e7d32;">✨ 10 cuadros por columna listos.</div>
+    <div class="status-banner" id="snapStatusMsg" style="background:#e3f2fd; color:#0d47a1;">📐 Ajuste por Tiras Activo (4 esquinas por columna ÷ 10).</div>
     
     <div style="margin-bottom: 6px;">
       <label style="font-size:0.85rem; font-weight:bold;">Columnas activas: </label>
@@ -359,8 +359,8 @@
 
     <!-- HERRAMIENTAS DE EDICIÓN -->
     <div class="adjust-toolbar">
-      <button class="btn btn-purple btn-sm" onclick="run10FramePerColumnDetect()">⚡ Auto-Detectar 10 Cuadros</button>
-      <button class="btn btn-blue btn-sm" onclick="switchToStripMode()">📐 Ajuste por Tiras</button>
+      <button class="btn btn-blue btn-sm" onclick="resetToStripMode()">📐 Reajustar 4 Esquinas</button>
+      <button class="btn btn-purple btn-sm" onclick="runIndividualBoxDetect()">🎯 Modo Cuadros Individuales</button>
       <button class="btn btn-dark btn-sm" onclick="saveRawPhotoToGallery()">💾 Guardar en Fototeca</button>
     </div>
 
@@ -373,22 +373,21 @@
       <button class="btn btn-outline btn-sm" onclick="resetZoom()" style="padding:4px 8px;">↺ 1x</button>
     </div>
 
-    <!-- CONTENEDOR CON DESPLAZAMIENTO PARA EL ZOOM -->
     <div class="canvas-scroll-container">
       <canvas id="cropCanvas"></canvas>
     </div>
 
-    <div id="modeHintText" style="font-size: 0.8rem; color: #666; margin-top: 6px;">
-      💡 <em>Haz zoom con 🔍+ para mover los puntos rojos con total precisión con el dedo.</em>
+    <div id="modeHintText" style="font-size: 0.8rem; color: #555; margin-top: 6px;">
+      💡 <em>Ajusta las 4 esquinas rojas de cada columna. Se divide automáticamente en 10 cuadros en 3D.</em>
     </div>
 
     <div style="margin-top: 10px;">
-      <button class="btn btn-blue" id="confirmCropBtn" onclick="cropAndAnimateBoxes()">✨ Generar Stop Motion</button>
+      <button class="btn btn-blue" id="confirmCropBtn" onclick="cropAndAnimate()">✨ Generar Stop Motion</button>
       <button class="btn btn-outline" onclick="cancelAdjust()">🔄 Elegir Otra Foto</button>
     </div>
   </div>
 
-  <!-- Paso 3: Reproductor con velocidad desde 0.5 FPS y Pantalla Completa -->
+  <!-- Paso 3: Reproductor con velocidad rápida y exportaciones optimizadas -->
   <div class="card" id="playerCard" style="display:none;">
     <canvas id="animationCanvas"></canvas>
     
@@ -426,7 +425,7 @@
       <button class="btn btn-outline btn-sm" onclick="resetAll()" style="margin-top:6px;">🗑️ Empezar Nueva Película</button>
     </div>
 
-    <div id="exportStatus" style="font-size: 0.85rem; margin-top: 8px; color: #555;"></div>
+    <div id="exportStatus" style="font-size: 0.85rem; margin-top: 8px; color: #555; font-weight: bold;"></div>
   </div>
 
   <!-- OVERLAY DE PANTALLA COMPLETA INMERSIVA -->
@@ -435,7 +434,7 @@
     <canvas id="fullscreenCanvas"></canvas>
   </div>
 
-  <!-- Plantilla SVG Limpia para Impresión Web -->
+  <!-- Plantilla SVG para Impresión Web -->
   <div id="printableFilmSheet">
     <div class="film-columns-container">
       <div class="film-column-block">
@@ -456,7 +455,7 @@
   <script>
     let openCvLoaded = false;
     let selectedColMode = '1-2';
-    let adjustMode = 'boxes'; // 'boxes' o 'strips'
+    let adjustMode = 'strips'; // MODO PREDETERMINADO: 4 ESQUINAS POR COLUMNA
     
     let outWidth = 540;
     let outHeight = 360;
@@ -465,11 +464,10 @@
     let rawUploadedFile = null;
     let isAppending = false;
     
-    let detectedBoxes = [];
     let columnStrips = [];
+    let detectedBoxes = [];
     let activeInteraction = null;
 
-    // Zoom State
     let currentZoom = 1.0;
 
     let allFrames = [];
@@ -671,16 +669,6 @@
       reader.readAsDataURL(file);
     }
 
-    // --- MODO TIRAS DE RESPALDO ---
-    function switchToStripMode() {
-      adjustMode = 'strips';
-      initColumnStrips();
-      document.getElementById('snapStatusMsg').innerText = '📐 Modo Tiras Activo: 4 puntos por columna ÷ 10 cuadros.';
-      document.getElementById('snapStatusMsg').style.background = '#e3f2fd';
-      document.getElementById('snapStatusMsg').style.color = '#0d47a1';
-      drawAdjuster();
-    }
-
     function getActiveColIndices() {
       if (selectedColMode === 'all') return [0, 1, 2];
       if (selectedColMode === '1-2') return [0, 1];
@@ -690,6 +678,7 @@
       return [0, 1];
     }
 
+    // --- INICIALIZADOR DE MODO TIRAS (4 ESQUINAS POR COLUMNA) ---
     function initColumnStrips() {
       columnStrips = [];
       if (!loadedImage) return;
@@ -721,6 +710,16 @@
       });
     }
 
+    function resetToStripMode() {
+      adjustMode = 'strips';
+      initColumnStrips();
+      document.getElementById('snapStatusMsg').innerText = '📐 Modo Tiras Activo (4 esquinas por columna ÷ 10).';
+      document.getElementById('snapStatusMsg').style.background = '#e3f2fd';
+      document.getElementById('snapStatusMsg').style.color = '#0d47a1';
+      document.getElementById('modeHintText').innerHTML = '💡 <em>Ajusta las 4 esquinas rojas de cada columna. Se divide automáticamente en 10 cuadros en 3D.</em>';
+      drawAdjuster();
+    }
+
     function interpColStrip(strip, u, v) {
       const [tl, tr, br, bl] = strip.corners;
       return {
@@ -729,195 +728,40 @@
       };
     }
 
-    // --- ALGORITMO ROBUSTO: GARANTIZA SIEMPRE EXACTAMENTE 10 CUADROS POR COLUMNA ---
-    function run10FramePerColumnDetect() {
+    // --- APERTURA DEL EDITOR (MODO TIRAS POR DEFECTO) ---
+    function setupAdjuster() {
+      clearInterval(playInterval);
+      document.getElementById('uploadCard').style.display = 'none';
+      document.getElementById('playerCard').style.display = 'none';
+      document.getElementById('adjustCard').style.display = 'block';
+
+      cropCanvas.width = loadedImage.width;
+      cropCanvas.height = loadedImage.height;
+
+      resetZoom();
+      // EL MODO PREDETERMINADO SIEMPRE ES TIRAS (4 ESQUINAS POR COLUMNA)
+      adjustMode = 'strips';
+      initColumnStrips();
+
+      document.getElementById('snapStatusMsg').innerText = '📐 Modo Tiras Activo (4 esquinas por columna ÷ 10).';
+      document.getElementById('snapStatusMsg').style.background = '#e3f2fd';
+      document.getElementById('snapStatusMsg').style.color = '#0d47a1';
+      document.getElementById('modeHintText').innerHTML = '💡 <em>Ajusta las 4 esquinas rojas de cada columna. Se divide automáticamente en 10 cuadros en 3D.</em>';
+
+      document.getElementById('confirmCropBtn').innerText = isAppending ? '➕ Añadir Cuadros' : '✨ Generar Stop Motion';
+      drawAdjuster();
+    }
+
+    // --- MODO SECUNDARIO: DETECCIÓN CUADRO POR CUADRO ---
+    function runIndividualBoxDetect() {
       adjustMode = 'boxes';
       const banner = document.getElementById('snapStatusMsg');
       detectedBoxes = [];
 
-      if (!openCvLoaded || !loadedImage) {
-        generateExact10GridBoxes();
-        banner.innerText = '🎯 10 cuadros por columna generados.';
-        drawAdjuster();
-        return;
-      }
-
-      const maxDim = 900;
-      const origW = loadedImage.width;
-      const origH = loadedImage.height;
-      const scale = Math.min(1.0, maxDim / Math.max(origW, origH));
-      const detW = Math.round(origW * scale);
-      const detH = Math.round(origH * scale);
-
-      const detCanvas = document.createElement('canvas');
-      detCanvas.width = detW;
-      detCanvas.height = detH;
-      const detCtx = detCanvas.getContext('2d');
-      detCtx.drawImage(loadedImage, 0, 0, detW, detH);
-
-      let src = cv.imread(detCanvas);
-      let gray = new cv.Mat();
-      let blurred = new cv.Mat();
-      let thresh = new cv.Mat();
-      let closed = new cv.Mat();
-      let contours = new cv.MatVector();
-      let hierarchy = new cv.Mat();
-
-      try {
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-        cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 35, 4);
-
-        let kernel = cv.Mat.ones(3, 3, cv.CV_8U);
-        cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kernel);
-        kernel.delete();
-
-        cv.findContours(closed, contours, hierarchy, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE);
-
-        let rawFound = [];
-        const totalArea = detW * detH;
-        const minArea = totalArea * 0.003;
-        const maxArea = totalArea * 0.08;
-        const minW = detW * 0.10;
-        const maxW = detW * 0.40;
-        const minH = detH * 0.025;
-        const maxH = detH * 0.14;
-
-        for (let i = 0; i < contours.size(); ++i) {
-          let cnt = contours.get(i);
-          let area = cv.contourArea(cnt);
-          if (area < minArea || area > maxArea) continue;
-
-          let peri = cv.arcLength(cnt, true);
-          let approx = new cv.Mat();
-          cv.approxPolyDP(cnt, approx, 0.035 * peri, true);
-
-          if (approx.rows === 4 && cv.isContourConvex(approx)) {
-            let rect = cv.boundingRect(approx);
-            let asp = rect.width / rect.height;
-            if (rect.width >= minW && rect.width <= maxW && rect.height >= minH && rect.height <= maxH && asp >= 1.1 && asp <= 2.5) {
-              let pts = [];
-              for (let j = 0; j < 4; j++) {
-                pts.push({
-                  x: approx.data32S[j * 2] / scale,
-                  y: approx.data32S[j * 2 + 1] / scale
-                });
-              }
-
-              let tl = pts.reduce((min, p) => (p.x + p.y < min.x + min.y ? p : min), pts[0]);
-              let br = pts.reduce((max, p) => (p.x + p.y > max.x + max.y ? p : max), pts[0]);
-              let tr = pts.reduce((max, p) => (p.x - p.y > max.x - max.y ? p : max), pts[0]);
-              let bl = pts.reduce((min, p) => (p.x - p.y < min.x - min.y ? p : min), pts[0]);
-
-              rawFound.push({
-                corners: [tl, tr, br, bl],
-                cx: (tl.x + tr.x + br.x + bl.x) / 4,
-                cy: (tl.y + tr.y + br.y + bl.y) / 4,
-                w: Math.hypot(tr.x - tl.x, tr.y - tl.y),
-                h: Math.hypot(bl.x - tl.x, bl.y - tl.y),
-                area: area
-              });
-            }
-          }
-          approx.delete();
-        }
-
-        // Deduplicar
-        let deduped = [];
-        rawFound.sort((a,b) => b.area - a.area);
-        rawFound.forEach(b => {
-          let exists = deduped.some(d => Math.hypot(d.cx - b.cx, d.cy - b.cy) < (b.w * 0.4));
-          if (!exists) deduped.push(b);
-        });
-
-        // Clasificar en 3 Columnas por su posición horizontal
-        let colBuckets = [[], [], []];
-        deduped.forEach(b => {
-          const ratioX = b.cx / (origW || 1);
-          if (ratioX < 0.38) colBuckets[0].push(b);
-          else if (ratioX < 0.68) colBuckets[1].push(b);
-          else colBuckets[2].push(b);
-        });
-
-        // Reconstruir SIEMPRE exactamente 10 cuadros por columna
-        detectedBoxes = [];
-        const w = origW;
-        const h = origH;
-
-        for (let c = 0; c < 3; c++) {
-          let colBoxes = colBuckets[c];
-          colBoxes.sort((a, b) => a.cy - b.cy);
-
-          // Determinar límites de la columna
-          let colLeft, colRight, colTop, colBot;
-          if (colBoxes.length >= 2) {
-            colLeft = Math.min(...colBoxes.map(b => Math.min(b.corners[0].x, b.corners[3].x)));
-            colRight = Math.max(...colBoxes.map(b => Math.max(b.corners[1].x, b.corners[2].x)));
-            colTop = Math.min(...colBoxes.map(b => Math.min(b.corners[0].y, b.corners[1].y)));
-            
-            // Si faltaron cuadros abajo por sombras, extrapolar altura completa de 10 cuadros
-            let avgH = colBoxes.reduce((sum, b) => sum + b.h, 0) / colBoxes.length;
-            colBot = Math.max(...colBoxes.map(b => Math.max(b.corners[2].y, b.corners[3].y)));
-            if ((colBot - colTop) < avgH * 7.5) {
-              colBot = Math.min(h * 0.94, colTop + (avgH * 10) + (avgH * 0.12 * 9));
-            }
-          } else {
-            // Límites por defecto de la columna si no se detectó nada
-            const marginX = w * 0.08;
-            const totalW = w - 2 * marginX;
-            const stripW = totalW * 0.28;
-            const gapX = (totalW - 3 * stripW) / 2;
-            colLeft = marginX + c * (stripW + gapX);
-            colRight = colLeft + stripW;
-            colTop = h * 0.07;
-            colBot = h * 0.92;
-          }
-
-          const colHeight = colBot - colTop;
-          const cellH = (colHeight * 0.89) / 10;
-          const gapY = (colHeight * 0.11) / 9;
-
-          // Generar los 10 cuadros de esta columna en orden
-          for (let r = 0; r < 10; r++) {
-            const expectedY = colTop + r * (cellH + gapY);
-            
-            // Buscar si OpenCV encontró un cuadro real en esta posición exacta
-            let matched = colBoxes.find(b => Math.abs(b.cy - (expectedY + cellH/2)) < (cellH * 0.45));
-
-            if (matched) {
-              matched.colIdx = c;
-              matched.rowIdx = r;
-              detectedBoxes.push(matched);
-            } else {
-              // Reconstruir matemáticamente el cuadro que faltaba
-              detectedBoxes.push({
-                colIdx: c,
-                rowIdx: r,
-                corners: [
-                  { x: colLeft, y: expectedY },
-                  { x: colRight, y: expectedY },
-                  { x: colRight, y: expectedY + cellH },
-                  { x: colLeft, y: expectedY + cellH }
-                ]
-              });
-            }
-          }
-        }
-
-        banner.innerText = `✅ ¡Alineados 10 cuadros por columna (Total: ${detectedBoxes.length})!`;
-        banner.style.background = '#e8f5e9';
-        banner.style.color = '#2e7d32';
-        drawAdjuster();
-        return;
-
-      } catch (err) {
-        console.warn("Error en detección:", err);
-      } finally {
-        src.delete(); gray.delete(); blurred.delete(); thresh.delete(); closed.delete(); contours.delete(); hierarchy.delete();
-      }
+      document.getElementById('modeHintText').innerHTML = '💡 <em>Modo Cuadros Individuales: Cada cuadro tiene sus 4 puntos rojos.</em>';
 
       generateExact10GridBoxes();
-      banner.innerText = '🎯 10 cuadros por columna listos.';
+      banner.innerText = '🎯 Modo Cuadros Individuales activo.';
       banner.style.background = '#fff3e0';
       banner.style.color = '#e65100';
       drawAdjuster();
@@ -958,22 +802,6 @@
       }
     }
 
-    function setupAdjuster() {
-      clearInterval(playInterval);
-      document.getElementById('uploadCard').style.display = 'none';
-      document.getElementById('playerCard').style.display = 'none';
-      document.getElementById('adjustCard').style.display = 'block';
-
-      cropCanvas.width = loadedImage.width;
-      cropCanvas.height = loadedImage.height;
-
-      resetZoom();
-      run10FramePerColumnDetect();
-
-      document.getElementById('confirmCropBtn').innerText = isAppending ? '➕ Añadir Cuadros' : '✨ Generar Stop Motion';
-      drawAdjuster();
-    }
-
     function isBoxActive(box) {
       if (selectedColMode === 'all') return true;
       if (selectedColMode === '1-2') return box.colIdx === 0 || box.colIdx === 1;
@@ -983,19 +811,22 @@
       return true;
     }
 
-    // --- DIBUJAR CUADROS CON 4 PUNTOS ROJOS Y SOPORTE DE ZOOM ---
+    // --- DIBUJADO DE GUÍAS Y PUNTOS ROJOS ---
     function drawAdjuster() {
       cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
       cropCtx.drawImage(loadedImage, 0, 0);
 
-      const redRadius = Math.max(14, cropCanvas.width * 0.020);
-      const fontScale = Math.max(15, cropCanvas.width * 0.022);
+      const redRadius = Math.max(15, cropCanvas.width * 0.022);
+      const fontScale = Math.max(16, cropCanvas.width * 0.024);
 
       if (adjustMode === 'strips') {
+        // --- MODO TIRAS PREDETERMINADO (4 ESQUINAS POR COLUMNA ÷ 10) ---
         let activeCounter = 1;
+
         columnStrips.forEach((strip) => {
           const [p0, p1, p2, p3] = strip.corners;
 
+          // Riel exterior de la columna
           cropCtx.strokeStyle = 'rgba(33, 150, 243, 0.85)';
           cropCtx.lineWidth = Math.max(3.5, cropCanvas.width * 0.0045);
           cropCtx.beginPath();
@@ -1006,6 +837,7 @@
           cropCtx.closePath();
           cropCtx.stroke();
 
+          // 10 cuadros divididos en perspectiva
           for (let r = 0; r < 10; r++) {
             const v0 = (r * 0.10) + 0.008;
             const v1 = ((r + 1) * 0.10) - 0.008;
@@ -1040,10 +872,11 @@
             cropCtx.fillText(String(activeCounter++), cx, cy);
           }
 
+          // 4 Puntos Rojos de Esquina de la Tira
           strip.corners.forEach(pt => {
             cropCtx.fillStyle = '#ff5722';
             cropCtx.beginPath();
-            cropCtx.arc(pt.x, pt.y, redRadius * 1.1, 0, Math.PI * 2);
+            cropCtx.arc(pt.x, pt.y, redRadius * 1.15, 0, Math.PI * 2);
             cropCtx.fill();
             cropCtx.strokeStyle = '#ffffff';
             cropCtx.lineWidth = 3;
@@ -1052,6 +885,7 @@
         });
 
       } else {
+        // --- MODO CUADROS INDIVIDUALES ---
         let activeCounter = 1;
 
         detectedBoxes.forEach((box) => {
@@ -1109,7 +943,6 @@
       return inside;
     }
 
-    // Touch & Pointer Coordinates (Soporta Zoom y Scroll)
     function getCanvasCoords(e) {
       const rect = cropCanvas.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -1122,7 +955,6 @@
 
     function onPointerDown(e) {
       const pos = getCanvasCoords(e);
-      // Radio de toque escalado según el zoom
       const touchDist = Math.max(30, (cropCanvas.width * 0.055) / currentZoom);
       activeInteraction = null;
 
@@ -1202,7 +1034,7 @@
     window.addEventListener('touchend', onPointerUp);
 
     // --- EXTRAE LOS CUADROS LIMPIOS ---
-    function cropAndAnimateBoxes() {
+    function cropAndAnimate() {
       const newPageFrames = [];
 
       const cleanCanvas = document.createElement('canvas');
@@ -1335,7 +1167,7 @@
       document.getElementById('exportStatus').innerHTML = '';
     }
 
-    // --- REPRODUCCIÓN (SOPORTA DESDE 0.5 FPS) ---
+    // --- REPRODUCCIÓN (DESDE 0.5 FPS) ---
     function startPlayback() {
       clearInterval(playInterval);
       isPlaying = true;
@@ -1417,8 +1249,9 @@
       status.appendChild(a);
     }
 
-    // Exportar Video MP4
-    async function createVideoBlob(loopCount = 3) {
+    // --- EXPORTAR VIDEO MP4 RÁPIDO CON PROGRESO (%) ---
+    async function createVideoBlob() {
+      const status = document.getElementById('exportStatus');
       const recCanvas = document.createElement('canvas');
       recCanvas.width = outWidth;
       recCanvas.height = outHeight;
@@ -1436,6 +1269,10 @@
       const chunks = [];
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
 
+      // Optimización de duración: evita esperas de minutos a FPS bajos
+      const loopCount = fps <= 1 ? 1 : (fps <= 4 ? 2 : 3);
+      const totalFramesToRecord = allFrames.length * loopCount;
+
       return new Promise((resolve) => {
         recorder.onstop = () => {
           const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
@@ -1444,21 +1281,22 @@
         };
 
         recorder.start();
-        let loop = 0;
+        let recordedCount = 0;
         let idx = 0;
-        const intervalMs = Math.round(1000 / fps);
+        const intervalMs = Math.max(50, Math.round(1000 / fps));
 
         const interval = setInterval(() => {
           recCtx.clearRect(0, 0, outWidth, outHeight);
           recCtx.drawImage(allFrames[idx], 0, 0, outWidth, outHeight);
-          idx++;
-          if (idx >= allFrames.length) {
-            idx = 0;
-            loop++;
-            if (loop >= loopCount) {
-              clearInterval(interval);
-              setTimeout(() => recorder.stop(), 200);
-            }
+          idx = (idx + 1) % allFrames.length;
+          recordedCount++;
+
+          const pct = Math.round((recordedCount / totalFramesToRecord) * 100);
+          status.innerText = `🎥 Procesando video: ${pct}%...`;
+
+          if (recordedCount >= totalFramesToRecord) {
+            clearInterval(interval);
+            setTimeout(() => recorder.stop(), 200);
           }
         }, intervalMs);
       });
@@ -1468,7 +1306,7 @@
       const status = document.getElementById('exportStatus');
       status.innerText = 'Preparando para WhatsApp...';
 
-      const vidData = await createVideoBlob(3);
+      const vidData = await createVideoBlob();
       if (vidData) {
         const file = new File([vidData.blob], `pelicula.${vidData.ext}`, { type: vidData.mimeType });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -1488,8 +1326,8 @@
 
     async function exportVideoFile() {
       const status = document.getElementById('exportStatus');
-      status.innerText = 'Procesando video MP4...';
-      const vidData = await createVideoBlob(3);
+      status.innerText = 'Iniciando procesamiento de video...';
+      const vidData = await createVideoBlob();
 
       if (!vidData) {
         status.innerText = 'Video no soportado. ¡Usa Guardar GIF!';
@@ -1506,17 +1344,26 @@
       status.appendChild(a);
     }
 
+    // --- EXPORTAR GIF RÁPIDO CON PROGRESO (%) ---
     function exportGifFile() {
       const status = document.getElementById('exportStatus');
-      status.innerText = 'Generando GIF animado...';
-      const imagesData = allFrames.map(f => f.toDataURL('image/jpeg', 0.9));
+      status.innerText = 'Generando GIF: 0%...';
+
+      const imagesData = allFrames.map(f => f.toDataURL('image/jpeg', 0.85));
+      const gifW = Math.min(400, outWidth);
+      const gifH = Math.round(gifW / (outWidth / outHeight));
 
       gifshot.createGIF({
         images: imagesData,
         interval: 1 / fps,
-        gifWidth: outWidth,
-        gifHeight: outHeight,
-        numWorkers: 2
+        gifWidth: gifW,
+        gifHeight: gifH,
+        sampleInterval: 10,
+        numWorkers: 2,
+        progressCallback: function(captureProgress) {
+          const pct = Math.round(captureProgress * 100);
+          status.innerText = `Generando GIF: ${pct}%...`;
+        }
       }, function(obj) {
         if (!obj.error) {
           status.innerHTML = `<a href="${obj.image}" download="pelicula_stopmotion.gif" class="btn btn-green">⬇️ Descargar GIF</a>`;
