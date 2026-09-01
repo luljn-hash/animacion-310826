@@ -106,15 +106,35 @@
       justify-content: center;
       flex-wrap: wrap;
       gap: 6px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
-    #cropCanvas {
+    /* CONTENEDOR DE ZOOM Y SCROLL */
+    .zoom-toolbar {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      background: #f0f4f8;
+      padding: 6px 10px;
+      border-radius: 10px;
+      margin-bottom: 8px;
+    }
+    .canvas-scroll-container {
       width: 100%;
       max-height: 55vh;
+      overflow: auto;
       border-radius: 12px;
       background: #222;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.6);
+      -webkit-overflow-scrolling: touch;
+    }
+    #cropCanvas {
+      display: block;
+      width: 100%;
       touch-action: none;
+      transform-origin: top left;
+      transition: width 0.15s ease-out;
     }
     
     #animationCanvas {
@@ -165,10 +185,11 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       margin-top: 10px;
+      flex-wrap: wrap;
     }
-    .controls input[type=range] { width: 110px; }
+    .controls input[type=range] { width: 120px; }
 
     .action-group {
       display: flex;
@@ -321,11 +342,11 @@
     </div>
   </div>
 
-  <!-- Paso 2: Editor 3D (Modo Cuadros o Modo Tiras) -->
+  <!-- Paso 2: Editor 3D con Zoom y Detección Exacta de 10 Cuadros -->
   <div class="card" id="adjustCard" style="display:none;">
-    <div class="status-banner" id="snapStatusMsg" style="background:#e8f5e9; color:#2e7d32;">✨ Modo de encuadre activo.</div>
+    <div class="status-banner" id="snapStatusMsg" style="background:#e8f5e9; color:#2e7d32;">✨ 10 cuadros por columna listos.</div>
     
-    <div style="margin-bottom: 8px;">
+    <div style="margin-bottom: 6px;">
       <label style="font-size:0.85rem; font-weight:bold;">Columnas activas: </label>
       <select id="colSelectInAdjust" onchange="syncColSelection(this.value)" style="padding:4px 8px; border-radius:6px; font-weight:bold;">
         <option value="1-2">Columnas 1 y 2 (20 cuadros)</option>
@@ -336,36 +357,48 @@
       </select>
     </div>
 
-    <!-- BARRA DE HERRAMIENTAS: SALIDA DE EMERGENCIA Y RE-DETECCIÓN -->
+    <!-- HERRAMIENTAS DE EDICIÓN -->
     <div class="adjust-toolbar">
-      <!-- BOTÓN DE SALIDA SOLICITADO: Ajustar por Tiras (4 Esquinas por Columna) -->
-      <button class="btn btn-blue btn-sm" id="toggleModeBtn" onclick="switchToStripMode()">📐 Ajuste por Tiras (4 Esquinas ÷ 10)</button>
-      <button class="btn btn-purple btn-sm" onclick="runIndividualBoxDetect()">⚡ Auto-Detectar Cuadros</button>
+      <button class="btn btn-purple btn-sm" onclick="run10FramePerColumnDetect()">⚡ Auto-Detectar 10 Cuadros</button>
+      <button class="btn btn-blue btn-sm" onclick="switchToStripMode()">📐 Ajuste por Tiras</button>
       <button class="btn btn-dark btn-sm" onclick="saveRawPhotoToGallery()">💾 Guardar en Fototeca</button>
     </div>
 
-    <canvas id="cropCanvas"></canvas>
+    <!-- HERRAMIENTAS DE ZOOM -->
+    <div class="zoom-toolbar">
+      <span style="font-size:0.8rem; font-weight:bold; color:#444;">Lupa:</span>
+      <button class="btn btn-outline btn-sm" onclick="changeZoom(-0.35)" style="padding:4px 10px;">🔍 -</button>
+      <span id="zoomLabel" style="font-weight:bold; font-size:0.82rem; min-width:45px;">100%</span>
+      <button class="btn btn-outline btn-sm" onclick="changeZoom(0.35)" style="padding:4px 10px;">🔍 +</button>
+      <button class="btn btn-outline btn-sm" onclick="resetZoom()" style="padding:4px 8px;">↺ 1x</button>
+    </div>
 
-    <div id="modeHintText" style="font-size: 0.8rem; color: #555; margin-top: 6px;">
-      💡 <em>Arrastra los puntos rojos para ajustar esquinas.</em>
+    <!-- CONTENEDOR CON DESPLAZAMIENTO PARA EL ZOOM -->
+    <div class="canvas-scroll-container">
+      <canvas id="cropCanvas"></canvas>
+    </div>
+
+    <div id="modeHintText" style="font-size: 0.8rem; color: #666; margin-top: 6px;">
+      💡 <em>Haz zoom con 🔍+ para mover los puntos rojos con total precisión con el dedo.</em>
     </div>
 
     <div style="margin-top: 10px;">
-      <button class="btn btn-blue" id="confirmCropBtn" onclick="cropAndAnimate()">✨ Generar Stop Motion</button>
+      <button class="btn btn-blue" id="confirmCropBtn" onclick="cropAndAnimateBoxes()">✨ Generar Stop Motion</button>
       <button class="btn btn-outline" onclick="cancelAdjust()">🔄 Elegir Otra Foto</button>
     </div>
   </div>
 
-  <!-- Paso 3: Reproductor, Pantalla Completa y Exportación -->
+  <!-- Paso 3: Reproductor con velocidad desde 0.5 FPS y Pantalla Completa -->
   <div class="card" id="playerCard" style="display:none;">
     <canvas id="animationCanvas"></canvas>
     
     <div class="controls">
       <button class="btn btn-blue" id="playBtn" onclick="togglePlay()">⏸️ Pausa</button>
-      <label>Velocidad: <span id="fpsLabel">8</span> FPS</label>
-      <input type="range" id="fpsSlider" min="2" max="24" value="8" oninput="updateFps(this.value)">
+      <label style="font-size:0.9rem; font-weight:bold;">Velocidad: <span id="fpsLabel" style="color:var(--primary);">3 FPS</span></label>
+      <input type="range" id="fpsSlider" min="0.5" max="20" step="0.5" value="3" oninput="updateFps(this.value)">
     </div>
 
+    <!-- BOTÓN PANTALLA COMPLETA ROTADA -->
     <div style="margin-top: 8px;">
       <button class="btn btn-dark" style="width:100%; font-size:1rem; padding:12px;" onclick="openFullscreenRotated()">
         ⛶ Pantalla Completa (Girar Horizontal)
@@ -423,7 +456,7 @@
   <script>
     let openCvLoaded = false;
     let selectedColMode = '1-2';
-    let adjustMode = 'boxes'; // 'boxes' (4 pts por cuadro) o 'strips' (4 esquinas por columna dividida en 10)
+    let adjustMode = 'boxes'; // 'boxes' o 'strips'
     
     let outWidth = 540;
     let outHeight = 360;
@@ -432,18 +465,18 @@
     let rawUploadedFile = null;
     let isAppending = false;
     
-    // Modo 1: Cuadros individuales
     let detectedBoxes = [];
-    // Modo 2: Tiras de 4 esquinas (1 tira por columna activa)
     let columnStrips = [];
-
     let activeInteraction = null;
+
+    // Zoom State
+    let currentZoom = 1.0;
 
     let allFrames = [];
     let currentFrameIdx = 0;
     let isPlaying = false;
     let isFullscreenPlaying = false;
-    let fps = 8;
+    let fps = 3.0; // PREDETERMINADO EN 3 FPS
     let playInterval = null;
     let fsPlayInterval = null;
 
@@ -473,7 +506,23 @@
       }
     }
 
-    // --- GENERAR Y DESCARGAR PDF VECTORIAL LIMPIO ---
+    // --- CONTROLES DE ZOOM ---
+    function changeZoom(delta) {
+      currentZoom = Math.max(1.0, Math.min(2.8, currentZoom + delta));
+      applyZoom();
+    }
+
+    function resetZoom() {
+      currentZoom = 1.0;
+      applyZoom();
+    }
+
+    function applyZoom() {
+      document.getElementById('zoomLabel').innerText = `${Math.round(currentZoom * 100)}%`;
+      cropCanvas.style.width = `${currentZoom * 100}%`;
+    }
+
+    // --- GENERAR Y DESCARGAR PDF LIMPIO ---
     function generateAndDownloadPDF() {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({
@@ -509,7 +558,7 @@
       doc.save("plantilla_cuadros_limpia.pdf");
     }
 
-    // --- GUARDAR FOTO ORIGINAL EN LA FOTOTECA ---
+    // --- GUARDAR FOTO ORIGINAL EN FOTOTECA ---
     async function saveRawPhotoToGallery() {
       if (!rawUploadedFile) {
         alert("No hay ninguna foto cargada aún.");
@@ -534,7 +583,7 @@
       a.click();
     }
 
-    // --- PANTALLA COMPLETA ROTADA (HORIZONTAL INMERSIVO) ---
+    // --- PANTALLA COMPLETA ROTADA ---
     function openFullscreenRotated() {
       const overlay = document.getElementById('fullscreenOverlay');
       const fsCanvas = document.getElementById('fullscreenCanvas');
@@ -566,15 +615,17 @@
       const fsCanvas = document.getElementById('fullscreenCanvas');
       const ctx = fsCanvas.getContext('2d');
 
+      const intervalMs = Math.round(1000 / fps);
+
       fsPlayInterval = setInterval(() => {
         if (allFrames.length === 0) return;
         ctx.clearRect(0, 0, outWidth, outHeight);
         ctx.drawImage(allFrames[currentFrameIdx], 0, 0, outWidth, outHeight);
         currentFrameIdx = (currentFrameIdx + 1) % allFrames.length;
-      }, 1000 / fps);
+      }, intervalMs);
     }
 
-    // --- SVG PARA IMPRESIÓN WEB ---
+    // --- SVG PARA IMPRESIÓN ---
     function renderPrintableSVGs() {
       const stripWidth = 180;
       const stripHeight = 840;
@@ -620,14 +671,13 @@
       reader.readAsDataURL(file);
     }
 
-    // --- SALIDA DE EMERGENCIA / MODO TIRAS (4 ESQUINAS POR COLUMNA) ---
+    // --- MODO TIRAS DE RESPALDO ---
     function switchToStripMode() {
       adjustMode = 'strips';
       initColumnStrips();
-      document.getElementById('snapStatusMsg').innerText = '📐 Modo Tiras Activo: 4 puntos rojos por columna ÷ 10 cuadros.';
+      document.getElementById('snapStatusMsg').innerText = '📐 Modo Tiras Activo: 4 puntos por columna ÷ 10 cuadros.';
       document.getElementById('snapStatusMsg').style.background = '#e3f2fd';
       document.getElementById('snapStatusMsg').style.color = '#0d47a1';
-      document.getElementById('modeHintText').innerHTML = '💡 <em>Ajusta las 4 esquinas de cada columna. Se divide automáticamente en 10 cuadros en 3D.</em>';
       drawAdjuster();
     }
 
@@ -671,7 +721,6 @@
       });
     }
 
-    // Interpolación en perspectiva para 1 columna dividida en 10 cuadros
     function interpColStrip(strip, u, v) {
       const [tl, tr, br, bl] = strip.corners;
       return {
@@ -680,17 +729,16 @@
       };
     }
 
-    // --- DETECCIÓN INDIVIDUAL 3D CON 4 PUNTOS ROJOS ---
-    function runIndividualBoxDetect() {
+    // --- ALGORITMO ROBUSTO: GARANTIZA SIEMPRE EXACTAMENTE 10 CUADROS POR COLUMNA ---
+    function run10FramePerColumnDetect() {
       adjustMode = 'boxes';
       const banner = document.getElementById('snapStatusMsg');
       detectedBoxes = [];
 
-      document.getElementById('modeHintText').innerHTML = '💡 <em>Cada cuadro tiene 4 puntos rojos. Arrástralos para ajustar esquinas.</em>';
-
       if (!openCvLoaded || !loadedImage) {
-        generateDefaultFilmBoxes();
-        banner.innerText = '🎯 Ajusta los puntos rojos sobre cada cuadro.';
+        generateExact10GridBoxes();
+        banner.innerText = '🎯 10 cuadros por columna generados.';
+        drawAdjuster();
         return;
       }
 
@@ -728,11 +776,11 @@
 
         let rawFound = [];
         const totalArea = detW * detH;
-        const minArea = totalArea * 0.005;
+        const minArea = totalArea * 0.003;
         const maxArea = totalArea * 0.08;
-        const minW = detW * 0.12;
-        const maxW = detW * 0.38;
-        const minH = detH * 0.035;
+        const minW = detW * 0.10;
+        const maxW = detW * 0.40;
+        const minH = detH * 0.025;
         const maxH = detH * 0.14;
 
         for (let i = 0; i < contours.size(); ++i) {
@@ -747,7 +795,7 @@
           if (approx.rows === 4 && cv.isContourConvex(approx)) {
             let rect = cv.boundingRect(approx);
             let asp = rect.width / rect.height;
-            if (rect.width >= minW && rect.width <= maxW && rect.height >= minH && rect.height <= maxH && asp >= 1.2 && asp <= 2.4) {
+            if (rect.width >= minW && rect.width <= maxW && rect.height >= minH && rect.height <= maxH && asp >= 1.1 && asp <= 2.5) {
               let pts = [];
               for (let j = 0; j < 4; j++) {
                 pts.push({
@@ -774,6 +822,7 @@
           approx.delete();
         }
 
+        // Deduplicar
         let deduped = [];
         rawFound.sort((a,b) => b.area - a.area);
         rawFound.forEach(b => {
@@ -781,71 +830,117 @@
           if (!exists) deduped.push(b);
         });
 
-        if (deduped.length >= 6) {
-          deduped.sort((a, b) => a.cx - b.cx);
-          let avgW = deduped.reduce((sum, b) => sum + b.w, 0) / deduped.length;
+        // Clasificar en 3 Columnas por su posición horizontal
+        let colBuckets = [[], [], []];
+        deduped.forEach(b => {
+          const ratioX = b.cx / (origW || 1);
+          if (ratioX < 0.38) colBuckets[0].push(b);
+          else if (ratioX < 0.68) colBuckets[1].push(b);
+          else colBuckets[2].push(b);
+        });
 
-          let colGroups = [];
-          let currentCol = [deduped[0]];
-          for (let i = 1; i < deduped.length; i++) {
-            if (Math.abs(deduped[i].cx - currentCol[0].cx) < (avgW * 0.7)) {
-              currentCol.push(deduped[i]);
+        // Reconstruir SIEMPRE exactamente 10 cuadros por columna
+        detectedBoxes = [];
+        const w = origW;
+        const h = origH;
+
+        for (let c = 0; c < 3; c++) {
+          let colBoxes = colBuckets[c];
+          colBoxes.sort((a, b) => a.cy - b.cy);
+
+          // Determinar límites de la columna
+          let colLeft, colRight, colTop, colBot;
+          if (colBoxes.length >= 2) {
+            colLeft = Math.min(...colBoxes.map(b => Math.min(b.corners[0].x, b.corners[3].x)));
+            colRight = Math.max(...colBoxes.map(b => Math.max(b.corners[1].x, b.corners[2].x)));
+            colTop = Math.min(...colBoxes.map(b => Math.min(b.corners[0].y, b.corners[1].y)));
+            
+            // Si faltaron cuadros abajo por sombras, extrapolar altura completa de 10 cuadros
+            let avgH = colBoxes.reduce((sum, b) => sum + b.h, 0) / colBoxes.length;
+            colBot = Math.max(...colBoxes.map(b => Math.max(b.corners[2].y, b.corners[3].y)));
+            if ((colBot - colTop) < avgH * 7.5) {
+              colBot = Math.min(h * 0.94, colTop + (avgH * 10) + (avgH * 0.12 * 9));
+            }
+          } else {
+            // Límites por defecto de la columna si no se detectó nada
+            const marginX = w * 0.08;
+            const totalW = w - 2 * marginX;
+            const stripW = totalW * 0.28;
+            const gapX = (totalW - 3 * stripW) / 2;
+            colLeft = marginX + c * (stripW + gapX);
+            colRight = colLeft + stripW;
+            colTop = h * 0.07;
+            colBot = h * 0.92;
+          }
+
+          const colHeight = colBot - colTop;
+          const cellH = (colHeight * 0.89) / 10;
+          const gapY = (colHeight * 0.11) / 9;
+
+          // Generar los 10 cuadros de esta columna en orden
+          for (let r = 0; r < 10; r++) {
+            const expectedY = colTop + r * (cellH + gapY);
+            
+            // Buscar si OpenCV encontró un cuadro real en esta posición exacta
+            let matched = colBoxes.find(b => Math.abs(b.cy - (expectedY + cellH/2)) < (cellH * 0.45));
+
+            if (matched) {
+              matched.colIdx = c;
+              matched.rowIdx = r;
+              detectedBoxes.push(matched);
             } else {
-              colGroups.push(currentCol);
-              currentCol = [deduped[i]];
+              // Reconstruir matemáticamente el cuadro que faltaba
+              detectedBoxes.push({
+                colIdx: c,
+                rowIdx: r,
+                corners: [
+                  { x: colLeft, y: expectedY },
+                  { x: colRight, y: expectedY },
+                  { x: colRight, y: expectedY + cellH },
+                  { x: colLeft, y: expectedY + cellH }
+                ]
+              });
             }
           }
-          colGroups.push(currentCol);
-
-          colGroups.forEach(col => col.sort((a, b) => a.cy - b.cy));
-
-          detectedBoxes = [];
-          colGroups.forEach((col, colIdx) => {
-            col.forEach((b, rowIdx) => {
-              b.colIdx = colIdx;
-              b.rowIdx = rowIdx;
-              detectedBoxes.push(b);
-            });
-          });
-
-          banner.innerText = `✅ ¡Detectados ${detectedBoxes.length} cuadros limpios con 4 esquinas!`;
-          banner.style.background = '#e8f5e9';
-          banner.style.color = '#2e7d32';
-          drawAdjuster();
-          return;
         }
+
+        banner.innerText = `✅ ¡Alineados 10 cuadros por columna (Total: ${detectedBoxes.length})!`;
+        banner.style.background = '#e8f5e9';
+        banner.style.color = '#2e7d32';
+        drawAdjuster();
+        return;
+
       } catch (err) {
-        console.warn("Error detección cuadros:", err);
+        console.warn("Error en detección:", err);
       } finally {
         src.delete(); gray.delete(); blurred.delete(); thresh.delete(); closed.delete(); contours.delete(); hierarchy.delete();
       }
 
-      generateDefaultFilmBoxes();
-      banner.innerText = '🎯 Ajusta los puntos rojos sobre cada cuadro.';
+      generateExact10GridBoxes();
+      banner.innerText = '🎯 10 cuadros por columna listos.';
       banner.style.background = '#fff3e0';
       banner.style.color = '#e65100';
       drawAdjuster();
     }
 
-    function generateDefaultFilmBoxes() {
+    function generateExact10GridBoxes() {
       detectedBoxes = [];
       if (!loadedImage) return;
       const w = loadedImage.width;
       const h = loadedImage.height;
 
       const marginX = w * 0.08;
-      const marginY = h * 0.08;
+      const marginY = h * 0.07;
       const totalW = w - 2 * marginX;
       const totalH = h - 2 * marginY;
 
       const stripW = totalW * 0.28;
       const gapX = (totalW - 3 * stripW) / 2;
-      const cellH = (totalH * 0.90) / 10;
-      const gapY = (totalH * 0.10) / 9;
+      const cellH = (totalH * 0.89) / 10;
+      const gapY = (totalH * 0.11) / 9;
 
       for (let c = 0; c < 3; c++) {
         const x0 = marginX + c * (stripW + gapX);
-        const boxW = stripW;
 
         for (let r = 0; r < 10; r++) {
           const y0 = marginY + r * (cellH + gapY);
@@ -854,8 +949,8 @@
             rowIdx: r,
             corners: [
               { x: x0, y: y0 },
-              { x: x0 + boxW, y: y0 },
-              { x: x0 + boxW, y: y0 + cellH },
+              { x: x0 + stripW, y: y0 },
+              { x: x0 + stripW, y: y0 + cellH },
               { x: x0, y: y0 + cellH }
             ]
           });
@@ -872,7 +967,8 @@
       cropCanvas.width = loadedImage.width;
       cropCanvas.height = loadedImage.height;
 
-      runIndividualBoxDetect();
+      resetZoom();
+      run10FramePerColumnDetect();
 
       document.getElementById('confirmCropBtn').innerText = isAppending ? '➕ Añadir Cuadros' : '✨ Generar Stop Motion';
       drawAdjuster();
@@ -887,22 +983,19 @@
       return true;
     }
 
-    // --- DIBUJADO DE GUÍAS (MODO CUADROS O MODO TIRAS) ---
+    // --- DIBUJAR CUADROS CON 4 PUNTOS ROJOS Y SOPORTE DE ZOOM ---
     function drawAdjuster() {
       cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
       cropCtx.drawImage(loadedImage, 0, 0);
 
-      const redRadius = Math.max(15, cropCanvas.width * 0.022);
-      const fontScale = Math.max(16, cropCanvas.width * 0.024);
+      const redRadius = Math.max(14, cropCanvas.width * 0.020);
+      const fontScale = Math.max(15, cropCanvas.width * 0.022);
 
       if (adjustMode === 'strips') {
-        // --- DIBUJAR MODO TIRAS (4 ESQUINAS POR COLUMNA ÷ 10 CUADROS) ---
         let activeCounter = 1;
-
         columnStrips.forEach((strip) => {
           const [p0, p1, p2, p3] = strip.corners;
 
-          // Contorno exterior de la columna
           cropCtx.strokeStyle = 'rgba(33, 150, 243, 0.85)';
           cropCtx.lineWidth = Math.max(3.5, cropCanvas.width * 0.0045);
           cropCtx.beginPath();
@@ -913,7 +1006,6 @@
           cropCtx.closePath();
           cropCtx.stroke();
 
-          // 10 cuadros divididos en perspectiva
           for (let r = 0; r < 10; r++) {
             const v0 = (r * 0.10) + 0.008;
             const v1 = ((r + 1) * 0.10) - 0.008;
@@ -933,7 +1025,6 @@
             cropCtx.closePath();
             cropCtx.stroke();
 
-            // Número en el centro
             const cx = (f0.x + f1.x + f2.x + f3.x) / 4;
             const cy = (f0.y + f1.y + f2.y + f3.y) / 4;
 
@@ -949,7 +1040,6 @@
             cropCtx.fillText(String(activeCounter++), cx, cy);
           }
 
-          // 4 Puntos Rojos de Esquina de la Tira
           strip.corners.forEach(pt => {
             cropCtx.fillStyle = '#ff5722';
             cropCtx.beginPath();
@@ -962,7 +1052,6 @@
         });
 
       } else {
-        // --- DIBUJAR MODO CUADROS INDIVIDUALES (4 PUNTOS POR CUADRO) ---
         let activeCounter = 1;
 
         detectedBoxes.forEach((box) => {
@@ -1020,6 +1109,7 @@
       return inside;
     }
 
+    // Touch & Pointer Coordinates (Soporta Zoom y Scroll)
     function getCanvasCoords(e) {
       const rect = cropCanvas.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -1032,11 +1122,11 @@
 
     function onPointerDown(e) {
       const pos = getCanvasCoords(e);
-      const touchDist = Math.max(35, cropCanvas.width * 0.06);
+      // Radio de toque escalado según el zoom
+      const touchDist = Math.max(30, (cropCanvas.width * 0.055) / currentZoom);
       activeInteraction = null;
 
       if (adjustMode === 'strips') {
-        // Toque en 1 de las 4 esquinas de una tira
         for (let s = 0; s < columnStrips.length; s++) {
           for (let c = 0; c < 4; c++) {
             if (Math.hypot(columnStrips[s].corners[c].x - pos.x, columnStrips[s].corners[c].y - pos.y) < touchDist) {
@@ -1047,7 +1137,6 @@
           }
         }
       } else {
-        // Toque en 1 de los puntos rojos de cuadros individuales
         for (let b = 0; b < detectedBoxes.length; b++) {
           for (let c = 0; c < 4; c++) {
             if (Math.hypot(detectedBoxes[b].corners[c].x - pos.x, detectedBoxes[b].corners[c].y - pos.y) < touchDist) {
@@ -1058,7 +1147,6 @@
           }
         }
 
-        // Toque en el centro del cuadro para moverlo entero
         for (let b = 0; b < detectedBoxes.length; b++) {
           if (isPointInsideQuad(pos, detectedBoxes[b].corners)) {
             activeInteraction = {
@@ -1113,8 +1201,8 @@
     window.addEventListener('touchmove', onPointerMove, { passive: false });
     window.addEventListener('touchend', onPointerUp);
 
-    // --- EXTRAE LOS CUADROS LIMPIOS (COMPATIBLE CON AMBOS MODOS) ---
-    function cropAndAnimate() {
+    // --- EXTRAE LOS CUADROS LIMPIOS ---
+    function cropAndAnimateBoxes() {
       const newPageFrames = [];
 
       const cleanCanvas = document.createElement('canvas');
@@ -1126,7 +1214,6 @@
       const srcMat = cv.imread(cleanCanvas);
 
       if (adjustMode === 'strips') {
-        // Extracción en Modo Tiras (4 esquinas divididas en 10 cuadros)
         columnStrips.forEach(strip => {
           for (let r = 0; r < 10; r++) {
             const v0 = (r * 0.10) + 0.008;
@@ -1154,7 +1241,6 @@
           }
         });
       } else {
-        // Extracción en Modo Cuadros Individuales
         const activeBoxes = detectedBoxes.filter(isBoxActive);
 
         activeBoxes.forEach(box => {
@@ -1249,6 +1335,7 @@
       document.getElementById('exportStatus').innerHTML = '';
     }
 
+    // --- REPRODUCCIÓN (SOPORTA DESDE 0.5 FPS) ---
     function startPlayback() {
       clearInterval(playInterval);
       isPlaying = true;
@@ -1257,12 +1344,14 @@
       const animCanvas = document.getElementById('animationCanvas');
       const ctx = animCanvas.getContext('2d');
 
+      const intervalMs = Math.round(1000 / fps);
+
       playInterval = setInterval(() => {
         if (allFrames.length === 0) return;
         ctx.clearRect(0, 0, outWidth, outHeight);
         ctx.drawImage(allFrames[currentFrameIdx], 0, 0, outWidth, outHeight);
         currentFrameIdx = (currentFrameIdx + 1) % allFrames.length;
-      }, 1000 / fps);
+      }, intervalMs);
     }
 
     function togglePlay() {
@@ -1276,8 +1365,14 @@
     }
 
     function updateFps(val) {
-      fps = parseInt(val);
-      document.getElementById('fpsLabel').innerText = fps;
+      fps = parseFloat(val);
+      if (fps < 1) {
+        document.getElementById('fpsLabel').innerText = `0.5 FPS (1 cuadro / 2s)`;
+      } else if (fps === 1) {
+        document.getElementById('fpsLabel').innerText = `1 FPS (1 cuadro / seg)`;
+      } else {
+        document.getElementById('fpsLabel').innerText = `${fps} FPS`;
+      }
       if (isPlaying) startPlayback();
       if (isFullscreenPlaying) startFullscreenPlayback();
     }
@@ -1328,7 +1423,7 @@
       recCanvas.width = outWidth;
       recCanvas.height = outHeight;
       const recCtx = recCanvas.getContext('2d');
-      const stream = recCanvas.captureStream(fps);
+      const stream = recCanvas.captureStream(Math.max(1, Math.round(fps)));
 
       let mimeType = 'video/mp4';
       if (typeof MediaRecorder === 'undefined') return null;
@@ -1351,6 +1446,8 @@
         recorder.start();
         let loop = 0;
         let idx = 0;
+        const intervalMs = Math.round(1000 / fps);
+
         const interval = setInterval(() => {
           recCtx.clearRect(0, 0, outWidth, outHeight);
           recCtx.drawImage(allFrames[idx], 0, 0, outWidth, outHeight);
@@ -1363,7 +1460,7 @@
               setTimeout(() => recorder.stop(), 200);
             }
           }
-        }, 1000 / fps);
+        }, intervalMs);
       });
     }
 
