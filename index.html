@@ -198,7 +198,7 @@
       margin-top: 12px;
     }
 
-    /* --- PANTALLA COMPLETA ROTADA --- */
+    /* --- OVERLAY DE PANTALLA COMPLETA ROTADA --- */
     #fullscreenOverlay {
       position: fixed;
       top: 0;
@@ -252,7 +252,7 @@
       box-shadow: 0 4px 10px rgba(0,0,0,0.5);
     }
 
-    /* --- IMPRESIÓN LIMPIA (1 PÁGINA) --- */
+    /* --- ESTILO DE IMPRESIÓN LIMPIO (1 PÁGINA) --- */
     @media print {
       @page {
         size: portrait;
@@ -308,7 +308,7 @@
 <body>
 
   <h1>🎬 Stop Motion Studio</h1>
-  <p>Crea animaciones cuadrando tiras y cuadros en perspectiva 3D.</p>
+  <p>Auto-detección de 4 esquinas por columna con ajuste en perspectiva 3D.</p>
 
   <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
   <input type="file" id="galleryInput" accept="image/*" style="display:none;">
@@ -342,9 +342,9 @@
     </div>
   </div>
 
-  <!-- Paso 2: Editor 3D con Modo Tiras por Defecto y Zoom -->
+  <!-- Paso 2: Editor 3D con Auto-Snap de 4 Esquinas por Columna -->
   <div class="card" id="adjustCard" style="display:none;">
-    <div class="status-banner" id="snapStatusMsg" style="background:#e3f2fd; color:#0d47a1;">📐 Ajuste por Tiras Activo (4 esquinas por columna ÷ 10).</div>
+    <div class="status-banner" id="snapStatusMsg" style="background:#e3f2fd; color:#0d47a1;">✨ 4 esquinas auto-detectadas por columna.</div>
     
     <div style="margin-bottom: 6px;">
       <label style="font-size:0.85rem; font-weight:bold;">Columnas activas: </label>
@@ -357,10 +357,10 @@
       </select>
     </div>
 
-    <!-- HERRAMIENTAS DE EDICIÓN -->
+    <!-- BARRA DE HERRAMIENTAS -->
     <div class="adjust-toolbar">
-      <button class="btn btn-blue btn-sm" onclick="resetToStripMode()">📐 Reajustar 4 Esquinas</button>
-      <button class="btn btn-purple btn-sm" onclick="runIndividualBoxDetect()">🎯 Modo Cuadros Individuales</button>
+      <button class="btn btn-purple btn-sm" onclick="autoDetectColumnStrips()">⚡ Re-Detectar Esquinas</button>
+      <button class="btn btn-outline btn-sm" onclick="resetDefaultColumnStrips()">↺ Centrar por Defecto</button>
       <button class="btn btn-dark btn-sm" onclick="saveRawPhotoToGallery()">💾 Guardar en Fototeca</button>
     </div>
 
@@ -378,7 +378,7 @@
     </div>
 
     <div id="modeHintText" style="font-size: 0.8rem; color: #555; margin-top: 6px;">
-      💡 <em>Ajusta las 4 esquinas rojas de cada columna. Se divide automáticamente en 10 cuadros en 3D.</em>
+      💡 <em>Las 4 esquinas rojas se auto-alinean a cada columna. Arrástralas para afinar.</em>
     </div>
 
     <div style="margin-top: 10px;">
@@ -387,7 +387,7 @@
     </div>
   </div>
 
-  <!-- Paso 3: Reproductor con velocidad rápida y exportaciones optimizadas -->
+  <!-- Paso 3: Reproductor, Pantalla Completa y Exportación -->
   <div class="card" id="playerCard" style="display:none;">
     <canvas id="animationCanvas"></canvas>
     
@@ -455,7 +455,6 @@
   <script>
     let openCvLoaded = false;
     let selectedColMode = '1-2';
-    let adjustMode = 'strips'; // MODO PREDETERMINADO: 4 ESQUINAS POR COLUMNA
     
     let outWidth = 540;
     let outHeight = 360;
@@ -464,8 +463,8 @@
     let rawUploadedFile = null;
     let isAppending = false;
     
+    // Lista de tiras activas: [{ colIdx: 0..2, corners: [TL, TR, BR, BL] }, ...]
     let columnStrips = [];
-    let detectedBoxes = [];
     let activeInteraction = null;
 
     let currentZoom = 1.0;
@@ -474,7 +473,7 @@
     let currentFrameIdx = 0;
     let isPlaying = false;
     let isFullscreenPlaying = false;
-    let fps = 3.0; // PREDETERMINADO EN 3 FPS
+    let fps = 3.0;
     let playInterval = null;
     let fsPlayInterval = null;
 
@@ -490,7 +489,7 @@
       selectedColMode = document.getElementById('colSelect').value;
       document.getElementById('colSelectInAdjust').value = selectedColMode;
       if (loadedImage) {
-        if (adjustMode === 'strips') initColumnStrips();
+        autoDetectColumnStrips();
         drawAdjuster();
       }
     }
@@ -499,7 +498,7 @@
       selectedColMode = val;
       document.getElementById('colSelect').value = val;
       if (loadedImage) {
-        if (adjustMode === 'strips') initColumnStrips();
+        autoDetectColumnStrips();
         drawAdjuster();
       }
     }
@@ -678,8 +677,7 @@
       return [0, 1];
     }
 
-    // --- INICIALIZADOR DE MODO TIRAS (4 ESQUINAS POR COLUMNA) ---
-    function initColumnStrips() {
+    function resetDefaultColumnStrips() {
       columnStrips = [];
       if (!loadedImage) return;
       const w = loadedImage.width;
@@ -708,15 +706,118 @@
           ]
         });
       });
+
+      drawAdjuster();
     }
 
-    function resetToStripMode() {
-      adjustMode = 'strips';
-      initColumnStrips();
-      document.getElementById('snapStatusMsg').innerText = '📐 Modo Tiras Activo (4 esquinas por columna ÷ 10).';
-      document.getElementById('snapStatusMsg').style.background = '#e3f2fd';
-      document.getElementById('snapStatusMsg').style.color = '#0d47a1';
-      document.getElementById('modeHintText').innerHTML = '💡 <em>Ajusta las 4 esquinas rojas de cada columna. Se divide automáticamente en 10 cuadros en 3D.</em>';
+    // --- AUTO-DETECTOR INTELIGENTE DE LAS 4 ESQUINAS DE CADA COLUMNA ---
+    function autoDetectColumnStrips() {
+      resetDefaultColumnStrips();
+
+      if (!openCvLoaded || !loadedImage) return;
+
+      const maxDim = 900;
+      const origW = loadedImage.width;
+      const origH = loadedImage.height;
+      const scale = Math.min(1.0, maxDim / Math.max(origW, origH));
+      const detW = Math.round(origW * scale);
+      const detH = Math.round(origH * scale);
+
+      const detCanvas = document.createElement('canvas');
+      detCanvas.width = detW;
+      detCanvas.height = detH;
+      const detCtx = detCanvas.getContext('2d');
+      detCtx.drawImage(loadedImage, 0, 0, detW, detH);
+
+      let src = cv.imread(detCanvas);
+      let gray = new cv.Mat();
+      let blurred = new cv.Mat();
+      let thresh = new cv.Mat();
+      let closed = new cv.Mat();
+      let contours = new cv.MatVector();
+      let hierarchy = new cv.Mat();
+
+      try {
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+        cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 35, 4);
+
+        // Kernel vertical para fusionar los 10 cuadros en 1 columna continua vertical
+        let kernel = cv.Mat.ones(9, 3, cv.CV_8U);
+        cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kernel);
+        kernel.delete();
+
+        cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        let foundStrips = [];
+        const totalArea = detW * detH;
+
+        for (let i = 0; i < contours.size(); ++i) {
+          let cnt = contours.get(i);
+          let area = cv.contourArea(cnt);
+          let rect = cv.boundingRect(cnt);
+
+          // La tira completa es vertical y abarca al menos el 40% de la altura de la página
+          if (rect.height >= detH * 0.40 && rect.width >= detW * 0.10 && rect.width <= detW * 0.45 && (rect.height / rect.width) >= 1.5) {
+            let hull = new cv.Mat();
+            cv.convexHull(cnt, hull, false, true);
+
+            let pts = [];
+            for (let j = 0; j < hull.rows; j++) {
+              pts.push({
+                x: hull.data32S[j * 2] / scale,
+                y: hull.data32S[j * 2 + 1] / scale
+              });
+            }
+            hull.delete();
+
+            if (pts.length >= 4) {
+              let tl = pts.reduce((min, p) => (p.x + p.y < min.x + min.y ? p : min), pts[0]);
+              let br = pts.reduce((max, p) => (p.x + p.y > max.x + max.y ? p : max), pts[0]);
+              let tr = pts.reduce((max, p) => (p.x - p.y > max.x - max.y ? p : max), pts[0]);
+              let bl = pts.reduce((min, p) => (p.x - p.y < min.x - min.y ? p : min), pts[0]);
+
+              const cx = (tl.x + tr.x + br.x + bl.x) / 4;
+              foundStrips.push({
+                corners: [tl, tr, br, bl],
+                cx: cx,
+                area: area
+              });
+            }
+          }
+        }
+
+        // Deduplicar tiras
+        let uniqueStrips = [];
+        foundStrips.sort((a,b) => b.area - a.area);
+        foundStrips.forEach(s => {
+          let exists = uniqueStrips.some(u => Math.abs(u.cx - s.cx) < (origW * 0.15));
+          if (!exists) uniqueStrips.push(s);
+        });
+
+        // Ordenar de izquierda a derecha
+        uniqueStrips.sort((a, b) => a.cx - b.cx);
+
+        const activeCols = getActiveColIndices();
+
+        activeCols.forEach((colIdx, listIdx) => {
+          const targetRatioX = (colIdx === 0) ? 0.22 : ((colIdx === 1) ? 0.50 : 0.78);
+          let matched = uniqueStrips.find(s => Math.abs(s.cx / (origW || 1) - targetRatioX) < 0.18);
+
+          if (matched && columnStrips[listIdx]) {
+            columnStrips[listIdx].corners = matched.corners;
+          }
+        });
+
+        document.getElementById('snapStatusMsg').innerText = '✨ 4 esquinas auto-detectadas por columna. Arrástralas para afinar.';
+        document.getElementById('snapStatusMsg').style.background = '#e8f5e9';
+        document.getElementById('snapStatusMsg').style.color = '#2e7d32';
+      } catch (err) {
+        console.warn("Auto-detección de columnas:", err);
+      } finally {
+        src.delete(); gray.delete(); blurred.delete(); thresh.delete(); closed.delete(); contours.delete(); hierarchy.delete();
+      }
+
       drawAdjuster();
     }
 
@@ -728,7 +829,7 @@
       };
     }
 
-    // --- APERTURA DEL EDITOR (MODO TIRAS POR DEFECTO) ---
+    // --- APERTURA DEL EDITOR CON AUTO-DETECCIÓN DE 4 ESQUINAS ---
     function setupAdjuster() {
       clearInterval(playInterval);
       document.getElementById('uploadCard').style.display = 'none';
@@ -739,79 +840,15 @@
       cropCanvas.height = loadedImage.height;
 
       resetZoom();
-      // EL MODO PREDETERMINADO SIEMPRE ES TIRAS (4 ESQUINAS POR COLUMNA)
-      adjustMode = 'strips';
-      initColumnStrips();
-
-      document.getElementById('snapStatusMsg').innerText = '📐 Modo Tiras Activo (4 esquinas por columna ÷ 10).';
-      document.getElementById('snapStatusMsg').style.background = '#e3f2fd';
-      document.getElementById('snapStatusMsg').style.color = '#0d47a1';
-      document.getElementById('modeHintText').innerHTML = '💡 <em>Ajusta las 4 esquinas rojas de cada columna. Se divide automáticamente en 10 cuadros en 3D.</em>';
+      
+      // AUTO-DETECTAR LAS 4 ESQUINAS DE LAS COLUMNAS POR DEFECTO
+      autoDetectColumnStrips();
 
       document.getElementById('confirmCropBtn').innerText = isAppending ? '➕ Añadir Cuadros' : '✨ Generar Stop Motion';
       drawAdjuster();
     }
 
-    // --- MODO SECUNDARIO: DETECCIÓN CUADRO POR CUADRO ---
-    function runIndividualBoxDetect() {
-      adjustMode = 'boxes';
-      const banner = document.getElementById('snapStatusMsg');
-      detectedBoxes = [];
-
-      document.getElementById('modeHintText').innerHTML = '💡 <em>Modo Cuadros Individuales: Cada cuadro tiene sus 4 puntos rojos.</em>';
-
-      generateExact10GridBoxes();
-      banner.innerText = '🎯 Modo Cuadros Individuales activo.';
-      banner.style.background = '#fff3e0';
-      banner.style.color = '#e65100';
-      drawAdjuster();
-    }
-
-    function generateExact10GridBoxes() {
-      detectedBoxes = [];
-      if (!loadedImage) return;
-      const w = loadedImage.width;
-      const h = loadedImage.height;
-
-      const marginX = w * 0.08;
-      const marginY = h * 0.07;
-      const totalW = w - 2 * marginX;
-      const totalH = h - 2 * marginY;
-
-      const stripW = totalW * 0.28;
-      const gapX = (totalW - 3 * stripW) / 2;
-      const cellH = (totalH * 0.89) / 10;
-      const gapY = (totalH * 0.11) / 9;
-
-      for (let c = 0; c < 3; c++) {
-        const x0 = marginX + c * (stripW + gapX);
-
-        for (let r = 0; r < 10; r++) {
-          const y0 = marginY + r * (cellH + gapY);
-          detectedBoxes.push({
-            colIdx: c,
-            rowIdx: r,
-            corners: [
-              { x: x0, y: y0 },
-              { x: x0 + stripW, y: y0 },
-              { x: x0 + stripW, y: y0 + cellH },
-              { x: x0, y: y0 + cellH }
-            ]
-          });
-        }
-      }
-    }
-
-    function isBoxActive(box) {
-      if (selectedColMode === 'all') return true;
-      if (selectedColMode === '1-2') return box.colIdx === 0 || box.colIdx === 1;
-      if (selectedColMode === '1') return box.colIdx === 0;
-      if (selectedColMode === '2') return box.colIdx === 1;
-      if (selectedColMode === '3') return box.colIdx === 2;
-      return true;
-    }
-
-    // --- DIBUJADO DE GUÍAS Y PUNTOS ROJOS ---
+    // --- DIBUJADO DE GUÍAS DE LAS COLUMNAS Y SUS 10 CUADROS ---
     function drawAdjuster() {
       cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
       cropCtx.drawImage(loadedImage, 0, 0);
@@ -819,128 +856,72 @@
       const redRadius = Math.max(15, cropCanvas.width * 0.022);
       const fontScale = Math.max(16, cropCanvas.width * 0.024);
 
-      if (adjustMode === 'strips') {
-        // --- MODO TIRAS PREDETERMINADO (4 ESQUINAS POR COLUMNA ÷ 10) ---
-        let activeCounter = 1;
+      // Asegurar orden de izquierda a derecha
+      columnStrips.sort((a, b) => a.corners[0].x - b.corners[0].x);
 
-        columnStrips.forEach((strip) => {
-          const [p0, p1, p2, p3] = strip.corners;
+      let activeCounter = 1;
 
-          // Riel exterior de la columna
-          cropCtx.strokeStyle = 'rgba(33, 150, 243, 0.85)';
-          cropCtx.lineWidth = Math.max(3.5, cropCanvas.width * 0.0045);
-          cropCtx.beginPath();
-          cropCtx.moveTo(p0.x, p0.y);
-          cropCtx.lineTo(p1.x, p1.y);
-          cropCtx.lineTo(p2.x, p2.y);
-          cropCtx.lineTo(p3.x, p3.y);
-          cropCtx.closePath();
-          cropCtx.stroke();
+      columnStrips.forEach((strip) => {
+        const [p0, p1, p2, p3] = strip.corners;
 
-          // 10 cuadros divididos en perspectiva
-          for (let r = 0; r < 10; r++) {
-            const v0 = (r * 0.10) + 0.008;
-            const v1 = ((r + 1) * 0.10) - 0.008;
+        // Riel exterior de la columna
+        cropCtx.strokeStyle = 'rgba(33, 150, 243, 0.85)';
+        cropCtx.lineWidth = Math.max(3.5, cropCanvas.width * 0.0045);
+        cropCtx.beginPath();
+        cropCtx.moveTo(p0.x, p0.y);
+        cropCtx.lineTo(p1.x, p1.y);
+        cropCtx.lineTo(p2.x, p2.y);
+        cropCtx.lineTo(p3.x, p3.y);
+        cropCtx.closePath();
+        cropCtx.stroke();
 
-            const f0 = interpColStrip(strip, 0.02, v0);
-            const f1 = interpColStrip(strip, 0.98, v0);
-            const f2 = interpColStrip(strip, 0.98, v1);
-            const f3 = interpColStrip(strip, 0.02, v1);
+        // 10 cuadros divididos automáticamente en perspectiva 3D
+        for (let r = 0; r < 10; r++) {
+          const v0 = (r * 0.10) + 0.008;
+          const v1 = ((r + 1) * 0.10) - 0.008;
 
-            cropCtx.strokeStyle = '#ffeb3b';
-            cropCtx.lineWidth = Math.max(2.5, cropCanvas.width * 0.0035);
-            cropCtx.beginPath();
-            cropCtx.moveTo(f0.x, f0.y);
-            cropCtx.lineTo(f1.x, f1.y);
-            cropCtx.lineTo(f2.x, f2.y);
-            cropCtx.lineTo(f3.x, f3.y);
-            cropCtx.closePath();
-            cropCtx.stroke();
+          const f0 = interpColStrip(strip, 0.02, v0);
+          const f1 = interpColStrip(strip, 0.98, v0);
+          const f2 = interpColStrip(strip, 0.98, v1);
+          const f3 = interpColStrip(strip, 0.02, v1);
 
-            const cx = (f0.x + f1.x + f2.x + f3.x) / 4;
-            const cy = (f0.y + f1.y + f2.y + f3.y) / 4;
-
-            cropCtx.fillStyle = 'rgba(0, 0, 0, 0.65)';
-            cropCtx.beginPath();
-            cropCtx.arc(cx, cy, fontScale * 0.85, 0, Math.PI * 2);
-            cropCtx.fill();
-
-            cropCtx.fillStyle = '#ffffff';
-            cropCtx.font = `bold ${fontScale}px sans-serif`;
-            cropCtx.textAlign = 'center';
-            cropCtx.textBaseline = 'middle';
-            cropCtx.fillText(String(activeCounter++), cx, cy);
-          }
-
-          // 4 Puntos Rojos de Esquina de la Tira
-          strip.corners.forEach(pt => {
-            cropCtx.fillStyle = '#ff5722';
-            cropCtx.beginPath();
-            cropCtx.arc(pt.x, pt.y, redRadius * 1.15, 0, Math.PI * 2);
-            cropCtx.fill();
-            cropCtx.strokeStyle = '#ffffff';
-            cropCtx.lineWidth = 3;
-            cropCtx.stroke();
-          });
-        });
-
-      } else {
-        // --- MODO CUADROS INDIVIDUALES ---
-        let activeCounter = 1;
-
-        detectedBoxes.forEach((box) => {
-          const [p0, p1, p2, p3] = box.corners;
-          const active = isBoxActive(box);
-
-          cropCtx.strokeStyle = active ? '#ffeb3b' : 'rgba(255, 235, 59, 0.25)';
+          cropCtx.strokeStyle = '#ffeb3b';
           cropCtx.lineWidth = Math.max(2.5, cropCanvas.width * 0.0035);
           cropCtx.beginPath();
-          cropCtx.moveTo(p0.x, p0.y);
-          cropCtx.lineTo(p1.x, p1.y);
-          cropCtx.lineTo(p2.x, p2.y);
-          cropCtx.lineTo(p3.x, p3.y);
+          cropCtx.moveTo(f0.x, f0.y);
+          cropCtx.lineTo(f1.x, f1.y);
+          cropCtx.lineTo(f2.x, f2.y);
+          cropCtx.lineTo(f3.x, f3.y);
           cropCtx.closePath();
           cropCtx.stroke();
 
-          const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
-          const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
+          // Número centrado
+          const cx = (f0.x + f1.x + f2.x + f3.x) / 4;
+          const cy = (f0.y + f1.y + f2.y + f3.y) / 4;
 
-          if (active) {
-            cropCtx.fillStyle = 'rgba(0, 0, 0, 0.65)';
-            cropCtx.beginPath();
-            cropCtx.arc(cx, cy, fontScale * 0.85, 0, Math.PI * 2);
-            cropCtx.fill();
+          cropCtx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+          cropCtx.beginPath();
+          cropCtx.arc(cx, cy, fontScale * 0.85, 0, Math.PI * 2);
+          cropCtx.fill();
 
-            cropCtx.fillStyle = '#ffffff';
-            cropCtx.font = `bold ${fontScale}px sans-serif`;
-            cropCtx.textAlign = 'center';
-            cropCtx.textBaseline = 'middle';
-            cropCtx.fillText(String(activeCounter++), cx, cy);
-          }
+          cropCtx.fillStyle = '#ffffff';
+          cropCtx.font = `bold ${fontScale}px sans-serif`;
+          cropCtx.textAlign = 'center';
+          cropCtx.textBaseline = 'middle';
+          cropCtx.fillText(String(activeCounter++), cx, cy);
+        }
 
-          box.corners.forEach(pt => {
-            cropCtx.fillStyle = active ? '#ff5722' : '#777777';
-            cropCtx.beginPath();
-            cropCtx.arc(pt.x, pt.y, redRadius, 0, Math.PI * 2);
-            cropCtx.fill();
-            cropCtx.strokeStyle = '#ffffff';
-            cropCtx.lineWidth = 2;
-            cropCtx.stroke();
-          });
+        // 4 Puntos Rojos de Esquina por Columna
+        strip.corners.forEach(pt => {
+          cropCtx.fillStyle = '#ff5722';
+          cropCtx.beginPath();
+          cropCtx.arc(pt.x, pt.y, redRadius * 1.15, 0, Math.PI * 2);
+          cropCtx.fill();
+          cropCtx.strokeStyle = '#ffffff';
+          cropCtx.lineWidth = 3;
+          cropCtx.stroke();
         });
-      }
-    }
-
-    function isPointInsideQuad(pt, quad) {
-      let inside = false;
-      for (let i = 0, j = 3; i < 4; j = i++) {
-        const xi = quad[i].x, yi = quad[i].y;
-        const xj = quad[j].x, yj = quad[j].y;
-        const intersect = ((yi > pt.y) !== (yj > pt.y)) &&
-            (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi);
-        if (intersect) inside = !inside;
-      }
-      return inside;
+      });
     }
 
     function getCanvasCoords(e) {
@@ -955,38 +936,13 @@
 
     function onPointerDown(e) {
       const pos = getCanvasCoords(e);
-      const touchDist = Math.max(30, (cropCanvas.width * 0.055) / currentZoom);
+      const touchDist = Math.max(32, (cropCanvas.width * 0.055) / currentZoom);
       activeInteraction = null;
 
-      if (adjustMode === 'strips') {
-        for (let s = 0; s < columnStrips.length; s++) {
-          for (let c = 0; c < 4; c++) {
-            if (Math.hypot(columnStrips[s].corners[c].x - pos.x, columnStrips[s].corners[c].y - pos.y) < touchDist) {
-              activeInteraction = { mode: 'strip_corner', stripIdx: s, cornerIdx: c };
-              e.preventDefault();
-              return;
-            }
-          }
-        }
-      } else {
-        for (let b = 0; b < detectedBoxes.length; b++) {
-          for (let c = 0; c < 4; c++) {
-            if (Math.hypot(detectedBoxes[b].corners[c].x - pos.x, detectedBoxes[b].corners[c].y - pos.y) < touchDist) {
-              activeInteraction = { mode: 'box_corner', boxIdx: b, cornerIdx: c };
-              e.preventDefault();
-              return;
-            }
-          }
-        }
-
-        for (let b = 0; b < detectedBoxes.length; b++) {
-          if (isPointInsideQuad(pos, detectedBoxes[b].corners)) {
-            activeInteraction = {
-              mode: 'move_box',
-              boxIdx: b,
-              startPos: pos,
-              origCorners: detectedBoxes[b].corners.map(pt => ({ ...pt }))
-            };
+      for (let s = 0; s < columnStrips.length; s++) {
+        for (let c = 0; c < 4; c++) {
+          if (Math.hypot(columnStrips[s].corners[c].x - pos.x, columnStrips[s].corners[c].y - pos.y) < touchDist) {
+            activeInteraction = { stripIdx: s, cornerIdx: c };
             e.preventDefault();
             return;
           }
@@ -1001,25 +957,9 @@
       const clampedX = Math.max(0, Math.min(cropCanvas.width, pos.x));
       const clampedY = Math.max(0, Math.min(cropCanvas.height, pos.y));
 
-      if (activeInteraction.mode === 'strip_corner') {
-        const s = activeInteraction.stripIdx;
-        const c = activeInteraction.cornerIdx;
-        columnStrips[s].corners[c] = { x: clampedX, y: clampedY };
-      } else if (activeInteraction.mode === 'box_corner') {
-        const b = activeInteraction.boxIdx;
-        const c = activeInteraction.cornerIdx;
-        detectedBoxes[b].corners[c] = { x: clampedX, y: clampedY };
-      } else if (activeInteraction.mode === 'move_box') {
-        const b = activeInteraction.boxIdx;
-        const dx = pos.x - activeInteraction.startPos.x;
-        const dy = pos.y - activeInteraction.startPos.y;
-        for (let i = 0; i < 4; i++) {
-          detectedBoxes[b].corners[i] = {
-            x: Math.max(0, Math.min(cropCanvas.width, activeInteraction.origCorners[i].x + dx)),
-            y: Math.max(0, Math.min(cropCanvas.height, activeInteraction.origCorners[i].y + dy))
-          };
-        }
-      }
+      const s = activeInteraction.stripIdx;
+      const c = activeInteraction.cornerIdx;
+      columnStrips[s].corners[c] = { x: clampedX, y: clampedY };
 
       drawAdjuster();
     }
@@ -1033,7 +973,7 @@
     window.addEventListener('touchmove', onPointerMove, { passive: false });
     window.addEventListener('touchend', onPointerUp);
 
-    // --- EXTRAE LOS CUADROS LIMPIOS ---
+    // --- EXTRAE LOS CUADROS LIMPIOS DE ARRIBA A ABAJO POR COLUMNA ---
     function cropAndAnimate() {
       const newPageFrames = [];
 
@@ -1045,40 +985,21 @@
 
       const srcMat = cv.imread(cleanCanvas);
 
-      if (adjustMode === 'strips') {
-        columnStrips.forEach(strip => {
-          for (let r = 0; r < 10; r++) {
-            const v0 = (r * 0.10) + 0.008;
-            const v1 = ((r + 1) * 0.10) - 0.008;
+      // Ordenar columnas de izquierda a derecha (Col 1 -> Col 2 -> Col 3)
+      columnStrips.sort((a, b) => a.corners[0].x - b.corners[0].x);
 
-            const f0 = interpColStrip(strip, 0.02, v0);
-            const f1 = interpColStrip(strip, 0.98, v0);
-            const f2 = interpColStrip(strip, 0.98, v1);
-            const f3 = interpColStrip(strip, 0.02, v1);
+      columnStrips.forEach(strip => {
+        // Extraer de arriba hacia abajo (r = 0 a 9)
+        for (let r = 0; r < 10; r++) {
+          const v0 = (r * 0.10) + 0.008;
+          const v1 = ((r + 1) * 0.10) - 0.008;
 
-            let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [f0.x, f0.y, f1.x, f1.y, f2.x, f2.y, f3.x, f3.y]);
-            let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, outWidth, 0, outWidth, outHeight, 0, outHeight]);
+          const f0 = interpColStrip(strip, 0.02, v0);
+          const f1 = interpColStrip(strip, 0.98, v0);
+          const f2 = interpColStrip(strip, 0.98, v1);
+          const f3 = interpColStrip(strip, 0.02, v1);
 
-            let M = cv.getPerspectiveTransform(srcTri, dstTri);
-            let dst = new cv.Mat();
-            cv.warpPerspective(srcMat, dst, M, new cv.Size(outWidth, outHeight), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
-
-            let fCanvas = document.createElement('canvas');
-            fCanvas.width = outWidth;
-            fCanvas.height = outHeight;
-            cv.imshow(fCanvas, dst);
-            newPageFrames.push(fCanvas);
-
-            srcTri.delete(); dstTri.delete(); M.delete(); dst.delete();
-          }
-        });
-      } else {
-        const activeBoxes = detectedBoxes.filter(isBoxActive);
-
-        activeBoxes.forEach(box => {
-          const [p0, p1, p2, p3] = box.corners;
-
-          let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y]);
+          let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [f0.x, f0.y, f1.x, f1.y, f2.x, f2.y, f3.x, f3.y]);
           let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, outWidth, 0, outWidth, outHeight, 0, outHeight]);
 
           let M = cv.getPerspectiveTransform(srcTri, dstTri);
@@ -1092,8 +1013,8 @@
           newPageFrames.push(fCanvas);
 
           srcTri.delete(); dstTri.delete(); M.delete(); dst.delete();
-        });
-      }
+        }
+      });
       srcMat.delete();
 
       if (isAppending) {
@@ -1167,7 +1088,7 @@
       document.getElementById('exportStatus').innerHTML = '';
     }
 
-    // --- REPRODUCCIÓN (DESDE 0.5 FPS) ---
+    // --- REPRODUCCIÓN ---
     function startPlayback() {
       clearInterval(playInterval);
       isPlaying = true;
@@ -1209,10 +1130,10 @@
       if (isFullscreenPlaying) startFullscreenPlayback();
     }
 
-    // Exportar JPGs en ZIP
+    // --- EXPORTAR JPGS EN ZIP (NUMERACIÓN ESTRICTA A 3 DÍGITOS) ---
     async function exportJpgZip() {
       const status = document.getElementById('exportStatus');
-      status.innerText = 'Empaquetando JPGs...';
+      status.innerText = 'Empaquetando JPGs ordenados...';
 
       const zip = new JSZip();
       const folder = zip.folder("pelicula_stopmotion");
@@ -1220,7 +1141,7 @@
       allFrames.forEach((canvas, idx) => {
         const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
         const base64Data = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
-        const num = String(idx + 1).padStart(2, '0');
+        const num = String(idx + 1).padStart(3, '0');
         folder.file(`cuadro_${num}.jpg`, base64Data, {base64: true});
       });
 
@@ -1232,7 +1153,7 @@
           await navigator.share({
             files: [zipFile],
             title: 'Mi Película Stop Motion',
-            text: '¡Aquí están los cuadros de mi película!'
+            text: '¡Aquí están los cuadros de mi película ordenados!'
           });
           status.innerText = '¡ZIP compartido con éxito!';
           return;
@@ -1244,7 +1165,7 @@
       a.href = url;
       a.download = "pelicula_stopmotion.zip";
       a.className = "btn btn-purple";
-      a.innerText = "⬇️ Descargar .ZIP con todos los Cuadros";
+      a.innerText = "⬇️ Descargar .ZIP Ordenado (JPGs)";
       status.innerHTML = '';
       status.appendChild(a);
     }
@@ -1269,7 +1190,6 @@
       const chunks = [];
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
 
-      // Optimización de duración: evita esperas de minutos a FPS bajos
       const loopCount = fps <= 1 ? 1 : (fps <= 4 ? 2 : 3);
       const totalFramesToRecord = allFrames.length * loopCount;
 
